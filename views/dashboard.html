@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html>
-<head><title>User Dashboard</title></head>
+<head><title>Dashboard</title></head>
 <body>
 <h1>Your Dashboard</h1>
 <div id="reportArea">Loading...</div>
@@ -14,11 +14,11 @@ fetch('/api/myReport')
     } else if (data.report) {
       document.getElementById('reportArea').innerText = data.report;
     } else {
-      document.getElementById('reportArea').innerText = 'No recent report found.';
+      document.getElementById('reportArea').innerText = 'No report.';
     }
   })
   .catch(e => {
-    document.getElementById('reportArea').innerText = 'Error loading report: ' + e;
+    document.getElementById('reportArea').innerText = 'Error: ' + e;
   });
 </script>
 </body>
