@@ -6,7 +6,9 @@ import AppleStrategy from 'passport-apple';
 import bcrypt from 'bcrypt';
 import { query } from './db.js';
 
-// 1) LOCAL STRATEGY
+/**
+ * Local Strategy
+ */
 passport.use('local', new LocalStrategy({
   usernameField: 'email',
   passwordField: 'password'
@@ -23,7 +25,9 @@ passport.use('local', new LocalStrategy({
   }
 }));
 
-// 2) GOOGLE
+/**
+ * Google Strategy
+ */
 passport.use('google', new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID || '',
   clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
@@ -33,6 +37,7 @@ passport.use('google', new GoogleStrategy({
     const email = profile.emails[0].value;
     let { rows } = await query('SELECT * FROM users WHERE email=$1', [email]);
     if (!rows.length) {
+      // create user
       const insertRes = await query(`
         INSERT INTO users (email) VALUES ($1) RETURNING *
       `, [email]);
@@ -44,7 +49,9 @@ passport.use('google', new GoogleStrategy({
   }
 }));
 
-// 3) APPLE
+/**
+ * Apple Strategy
+ */
 passport.use('apple', new AppleStrategy({
   clientID: process.env.APPLE_CLIENT_ID || '',
   teamID: process.env.APPLE_TEAM_ID || '',
@@ -68,12 +75,10 @@ passport.use('apple', new AppleStrategy({
   }
 }));
 
-// SERIALIZE
 passport.serializeUser((user, done) => {
   done(null, user.id);
 });
 
-// DESERIALIZE
 passport.deserializeUser(async (id, done) => {
   try {
     const { rows } = await query('SELECT * FROM users WHERE id=$1', [id]);
