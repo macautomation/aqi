@@ -18,9 +18,8 @@ export async function initDB() {
         address VARCHAR(255),
         lat DOUBLE PRECISION,
         lon DOUBLE PRECISION,
-        latest_report TEXT  -- store JSON or text of their last generated report
+        latest_report TEXT
       );
-
       CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id),
