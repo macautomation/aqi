@@ -3,12 +3,12 @@
 ```plaintext
 air-quality-project/
 ├── package.json
-├── server.js            # Express, routes, user dashboard
+├── server.js            # Main Express app
 ├── db.js                # Postgres connection & schema
 ├── auth.js              # Passport strategies (local, Google, Apple)
-├── scraping.js          # Web scraping logic (fire.airnow.gov, xappp, arcgis, etc.)
-├── weather.js           # OpenWeather, AirNow, wind direction logic
-├── utils.js             # distanceMiles, parseAirNowFireUrl, color-coded logic, etc.
+├── weather.js           # OpenWeather, AirNow, wind logic
+├── scraping.js          # Scraping logic (fire.airnow, xappp, arcgis)
+├── utils.js             # distanceMiles, color-coded AQI, etc.
 ├── views/
 │   ├── index.html
 │   ├── signup.html
@@ -16,8 +16,8 @@ air-quality-project/
 │   ├── donation.html
 │   ├── forgot.html
 │   ├── reset.html
-│   └── dashboard.html   # new page for user's most recent report
-└── README.md 
+│   ├── dashboard.html
+└── README.md
 
 ```
 TO DO:
