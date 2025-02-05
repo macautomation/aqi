@@ -3,7 +3,7 @@
 <head><title>Dashboard</title></head>
 <body>
 <h1>Your Dashboard</h1>
-<div id="reportArea">Loading...</div>
+<div id="reportArea">Loading your report...</div>
 
 <script>
 fetch('/api/myReport')
@@ -21,5 +21,6 @@ fetch('/api/myReport')
     document.getElementById('reportArea').innerText = 'Error: ' + e;
   });
 </script>
+<p><a href="index.html">Home</a> | <a href="login.html">Log Out</a></p>
 </body>
 </html>
