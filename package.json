@@ -2,13 +2,10 @@
   "name": "air-quality-scripts",
   "version": "1.0.0",
   "type": "module",
-
-  // Important: specify Node version
   "engines": {
     "node": "20.x"
   },
 
-  // This ensures Render won't see a yarn.lock and default to Yarn + Bun
   "scripts": {
     "install": "npm install",
     "build": "echo 'No build step required'",
