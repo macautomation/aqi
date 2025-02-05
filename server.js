@@ -7,34 +7,27 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { initDB, query } from './db.js';
 import './auth.js'; // loads passport strategies
-import { parseAirNowFireUrl } from './utils.js';
-import { fetchOpenWeather, fetchAirNowAQI, labelAirNowAQI } from './weather.js';
-import { scrapeFireAirnow, scrapeXappp } from './scraping.js';
+import { fetchOpenWeather, fetchAirNowAQI, labelAirNowAQI, getWindStatus } from './weather.js';
+import { scrapeFireAirnow, scrapeXappp, scrapeArcgis } from './scraping.js';
 import { distanceMiles } from './utils.js';
-
-// GEOCODING (Google)
 import axios from 'axios';
-
-// SendGrid for email
-import sendgrid from 'sendgrid';
-const sg = sendgrid(process.env.SENDGRID_API_KEY);
-
+import cron from 'node-cron';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+// SendGrid
+import sgMail from '@sendgrid/mail';
+sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Node-cron
-import cron from 'node-cron';
-
-// ENV
 const PORT = process.env.PORT || 3000;
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// session
 app.use(session({
   secret: process.env.SESSION_SECRET || 'keyboard cat',
   resave: false,
@@ -43,32 +36,17 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Serve static
 app.use(express.static(path.join(__dirname, 'views')));
 
-// HELPER: sendEmail via SendGrid
-function sendEmail(to, subject, text) {
-  const request = sg.emptyRequest({
-    method: 'POST',
-    path: '/v3/mail/send',
-    body: {
-      personalizations: [{
-        to: [{ email: to }],
-        subject
-      }],
-      from: { email: 'noreply@yourapp.com' },
-      content: [{
-        type: 'text/plain',
-        value: text
-      }]
-    }
-  });
-  return new Promise((resolve, reject) => {
-    sg.API(request, function (error, response) {
-      if (error) return reject(error);
-      resolve(response);
-    });
-  });
+// Helper to send email
+async function sendEmail(to, subject, text) {
+  const msg = {
+    to,
+    from: 'noreply@yourapp.com',
+    subject,
+    text
+  };
+  await sgMail.send(msg);
 }
 
 // HOME
@@ -76,7 +54,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'index.html'));
 });
 
-// SIGNUP
+// SIGNUP (Local)
 app.get('/signup', (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'signup.html'));
 });
@@ -85,7 +63,6 @@ app.post('/signup', async (req, res) => {
   const { email, password, address } = req.body;
   if (!email || !password || !address) return res.status(400).send('Missing fields');
   try {
-    // Geocode address
     let lat = null, lon = null;
     if (process.env.GOOGLE_GEOCODE_KEY) {
       const url = 'https://maps.googleapis.com/maps/api/geocode/json';
@@ -119,9 +96,7 @@ app.get('/login', (req, res) => {
 
 app.post('/login',
   passport.authenticate('local', { failureRedirect: '/login' }),
-  (req, res) => {
-    res.redirect('/dashboard');
-  }
+  (req, res) => res.redirect('/dashboard')
 );
 
 // FORGOT
@@ -131,21 +106,21 @@ app.get('/forgot', (req, res) => {
 
 app.post('/forgot', async (req, res) => {
   const { email } = req.body;
-  if (!email) return res.status(400).send('No email provided');
+  if (!email) return res.status(400).send('No email');
   const { rows } = await query('SELECT id FROM users WHERE email=$1', [email]);
   if (!rows.length) {
     return res.send('If your account is found, a reset link is sent.');
   }
   const userId = rows[0].id;
   const token = crypto.randomBytes(20).toString('hex');
-  const expires = new Date(Date.now() + 3600 * 1000); // 1 hr
+  const expires = new Date(Date.now() + 3600 * 1000);
   await query(`
     INSERT INTO password_reset_tokens (user_id, token, expires_at)
     VALUES ($1, $2, $3)
   `, [userId, token, expires]);
-  const resetLink = `${APP_URL}/reset/${token}`;
-  await sendEmail(email, 'Password Reset', `Click here: ${resetLink}`);
-  res.send('If your account is found, a reset link has been emailed.');
+  const link = `${APP_URL}/reset/${token}`;
+  await sendEmail(email, 'Password Reset', `Click here: ${link}`);
+  res.send('If your account is found, a reset link is emailed.');
 });
 
 // RESET
@@ -156,13 +131,12 @@ app.get('/reset/:token', (req, res) => {
 app.post('/reset/:token', async (req, res) => {
   const { token } = req.params;
   const { newPassword } = req.body;
-  if (!newPassword) return res.status(400).send('No password');
   const now = new Date();
   const { rows } = await query(`
     SELECT user_id FROM password_reset_tokens
     WHERE token=$1 AND expires_at > $2
   `, [token, now]);
-  if (!rows.length) return res.status(400).send('Invalid or expired');
+  if (!rows.length) return res.status(400).send('Invalid/expired token');
   const userId = rows[0].user_id;
   const hash = await bcrypt.hash(newPassword, 10);
   await query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, userId]);
@@ -190,87 +164,76 @@ app.get('/donation', (req, res) => {
 });
 
 app.post('/donate-now', (req, res) => {
-  // Hard-coded Payment Link
   res.redirect('https://donate.stripe.com/00g02da1bgwA5he5kk');
 });
 
-// DASHBOARD - user can see their most recent report
-app.get('/dashboard', ensureAuthenticated, async (req, res) => {
-  // load user from req.user
-  // show them a page with latest_report
+// DASHBOARD
+app.get('/dashboard', ensureAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'dashboard.html'));
 });
 
-app.get('/api/myReport', ensureAuthenticated, async (req, res) => {
-  const userId = req.user.id;
-  const { rows } = await query(`
-    SELECT latest_report FROM users WHERE id=$1
-  `, [userId]);
-  if (!rows.length) return res.json({ error: 'No user' });
+app.get('/api/myReport', ensureAuth, async (req, res) => {
+  const { rows } = await query('SELECT latest_report FROM users WHERE id=$1', [req.user.id]);
+  if (!rows.length) return res.json({ error: 'No user found' });
   const lr = rows[0].latest_report || '{}';
   res.json(JSON.parse(lr));
 });
 
-// CRON daily
+// CRON daily job (8 AM)
 cron.schedule('0 8 * * *', async () => {
   console.log('[CRON] daily triggered');
   try {
     const { rows } = await query('SELECT * FROM users');
     for (const user of rows) {
-      if (!user.lat || !user.lon) {
-        continue; // skip if no coords
-      }
+      if (!user.lat || !user.lon) continue;
       const aqi = await fetchAirNowAQI(user.lat, user.lon);
-      const aqiLabel = labelAirNowAQI(aqi);
-      const openW = await fetchOpenWeather(user.lat, user.lon);
+      const label = labelAirNowAQI(aqi);
+      const ow = await fetchOpenWeather(user.lat, user.lon);
 
-      // parse the "fire airnow" as an example:
+      // Fire AirNow
       const fireResult = await scrapeFireAirnow('https://fire.airnow.gov/#10/34.1124/-118.1932');
-      let windColor = 'Green';
-      if (fireResult) {
-        // placeholder logic
-        windColor = (openW && openW.windSpeed > 5) ? 'Red' : 'Yellow';
-      }
+      const nearFire = fireResult && fireResult.nearFire;
 
-      // xappp
+      // XAPPP
       const xapppData = await scrapeXappp(user.lat, user.lon);
+      // ArcGIS
+      const arcgisData = await scrapeArcgis(user.lat, user.lon);
 
-      // average AQI (we only have 1 from AirNow for now)
-      const avgAQI = aqi || 0;
-      // The "Most Recent Wind Direction" in bold:
-      const windDir = `Wind Speed: ${openW.windSpeed}, Deg: ${openW.windDeg}, Color: ${windColor}`;
+      const windColor = getWindStatus(ow.windSpeed, ow.windDeg, nearFire);
 
+      // Construct report
       const lines = [];
-      lines.push(`**Average AQI**: ${avgAQI} (${aqiLabel})`);
-      lines.push(`**Most Recent Wind Direction**: ${windDir}`);
+      lines.push(`**Average AQI**: ${aqi || 0} (${label})`);
+      lines.push(`**Most Recent Wind**: Speed=${ow.windSpeed}, Deg=${ow.windDeg}, Indicator=${windColor}`);
       if (xapppData) {
-        lines.push(`xappp station: ${xapppData.station}, AQI: ${xapppData.aqiText}`);
+        lines.push(`Station: ${xapppData.station}, AQI=${xapppData.aqiText || 'N/A'}`);
       }
-      if (fireResult && fireResult.nearFire) {
-        lines.push(`You are near a fire boundary (~${fireResult.fireDist.toFixed(1)} miles)`);
+      if (arcgisData) {
+        lines.push(`ArcGIS: ${arcgisData.note}`);
+      }
+      if (nearFire) {
+        lines.push(`You are near a fire boundary (within 50 miles)`);
       }
 
       const report = lines.join('\n');
-      // store into user.latest_report
       await query('UPDATE users SET latest_report=$1 WHERE id=$2', [JSON.stringify({ report }), user.id]);
 
-      // send email
       await sendEmail(user.email, 'Your Daily Air Update', report);
       console.log(`Sent daily update to ${user.email}`);
     }
   } catch (err) {
-    console.error('[CRON daily] error', err);
+    console.error('[CRON daily]', err);
   }
 });
 
 // helper
-function ensureAuthenticated(req, res, next) {
+function ensureAuth(req, res, next) {
   if (req.isAuthenticated()) return next();
   res.redirect('/login');
 }
 
-// LISTEN
+// START
 app.listen(PORT, async () => {
   await initDB();
-  console.log(`Server running on ${PORT}, app url: ${APP_URL}`);
+  console.log(`Server on ${PORT}, url=${APP_URL}`);
 });
