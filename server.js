@@ -1,44 +1,58 @@
 // server.js
 import express from 'express';
 import session from 'express-session';
+import pgSession from 'connect-pg-simple';
+import { Pool } from 'pg';
 import passport from 'passport';
 import bodyParser from 'body-parser';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import cron from 'node-cron';
+
 import { initDB, query } from './db.js';
-import './auth.js'; // loads passport strategies
+import './auth.js'; // local, google, apple passport strategies
 import { fetchOpenWeather, fetchAirNowAQI, labelAirNowAQI, getWindStatus } from './weather.js';
 import { scrapeFireAirnow, scrapeXappp, scrapeArcgis } from './scraping.js';
 import { distanceMiles } from './utils.js';
 import axios from 'axios';
-import cron from 'node-cron';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 // SendGrid
 import sgMail from '@sendgrid/mail';
 sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
 
+// Node / path setup
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = process.env.PORT || 3000;
-const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
+// Postgres pool to reuse for sessions
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_SSL ? { rejectUnauthorized: false } : false
+});
+const PgSession = pgSession(session);
 
+// Express
 const app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// Session with Postgres store
 app.use(session({
+  store: new PgSession({ pool }), // store sessions in Postgres
   secret: process.env.SESSION_SECRET || 'keyboard cat',
   resave: false,
   saveUninitialized: false
 }));
+
 app.use(passport.initialize());
 app.use(passport.session());
 
-app.use(express.static(path.join(__dirname, 'views')));
+// Serve static .html files from the root directory
+// so e.g. /index.html, /signup.html, /login.html, etc.
+app.use(express.static(__dirname));
 
-// Helper to send email
+// Quick helper to send email with SendGrid
 async function sendEmail(to, subject, text) {
   const msg = {
     to,
@@ -49,28 +63,20 @@ async function sendEmail(to, subject, text) {
   await sgMail.send(msg);
 }
 
-// HOME
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'index.html'));
-});
+/* =========================================
+   ROUTES: now /api/... for form submissions
+   ========================================= */
 
-// SIGNUP (Local)
-app.get('/signup', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'signup.html'));
-});
-
-app.post('/signup', async (req, res) => {
+// SIGNUP (POST /api/signup)
+app.post('/api/signup', async (req, res) => {
   const { email, password, address } = req.body;
   if (!email || !password || !address) return res.status(400).send('Missing fields');
   try {
     let lat = null, lon = null;
     if (process.env.GOOGLE_GEOCODE_KEY) {
-      const url = 'https://maps.googleapis.com/maps/api/geocode/json';
-      const resp = await axios.get(url, {
-        params: {
-          address,
-          key: process.env.GOOGLE_GEOCODE_KEY
-        }
+      const geoURL = 'https://maps.googleapis.com/maps/api/geocode/json';
+      const resp = await axios.get(geoURL, {
+        params: { address, key: process.env.GOOGLE_GEOCODE_KEY }
       });
       if (resp.data.results && resp.data.results.length) {
         lat = resp.data.results[0].geometry.location.lat;
@@ -82,29 +88,24 @@ app.post('/signup', async (req, res) => {
       INSERT INTO users (email, password_hash, address, lat, lon)
       VALUES ($1, $2, $3, $4, $5)
     `, [email, hash, address, lat, lon]);
-    res.redirect('/login');
+    // redirect to login.html
+    res.redirect('/login.html');
   } catch (err) {
-    console.error('[POST /signup]', err);
+    console.error('[POST /api/signup]', err);
     res.status(500).send('Error signing up');
   }
 });
 
-// LOGIN
-app.get('/login', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'login.html'));
-});
-
-app.post('/login',
-  passport.authenticate('local', { failureRedirect: '/login' }),
-  (req, res) => res.redirect('/dashboard')
+// LOGIN (POST /api/login)
+app.post('/api/login',
+  passport.authenticate('local', { failureRedirect: '/login.html' }),
+  (req, res) => {
+    res.redirect('/dashboard.html');
+  }
 );
 
-// FORGOT
-app.get('/forgot', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'forgot.html'));
-});
-
-app.post('/forgot', async (req, res) => {
+// FORGOT (POST /api/forgot)
+app.post('/api/forgot', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).send('No email');
   const { rows } = await query('SELECT id FROM users WHERE email=$1', [email]);
@@ -118,60 +119,55 @@ app.post('/forgot', async (req, res) => {
     INSERT INTO password_reset_tokens (user_id, token, expires_at)
     VALUES ($1, $2, $3)
   `, [userId, token, expires]);
-  const link = `${APP_URL}/reset/${token}`;
+  const link = `${process.env.APP_URL || 'http://localhost:3000'}/reset.html?token=${token}`;
   await sendEmail(email, 'Password Reset', `Click here: ${link}`);
   res.send('If your account is found, a reset link is emailed.');
 });
 
-// RESET
-app.get('/reset/:token', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'reset.html'));
-});
-
-app.post('/reset/:token', async (req, res) => {
-  const { token } = req.params;
-  const { newPassword } = req.body;
+// RESET (POST /api/reset)
+app.post('/api/reset', async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token) return res.status(400).send('No token');
   const now = new Date();
   const { rows } = await query(`
     SELECT user_id FROM password_reset_tokens
     WHERE token=$1 AND expires_at > $2
   `, [token, now]);
   if (!rows.length) return res.status(400).send('Invalid/expired token');
+
   const userId = rows[0].user_id;
   const hash = await bcrypt.hash(newPassword, 10);
   await query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, userId]);
   await query('DELETE FROM password_reset_tokens WHERE token=$1', [token]);
-  res.send('Password reset. <a href="/login">Log in</a>');
+  res.send('Password reset. <a href="login.html">Log in</a>');
 });
-
-// GOOGLE
-app.get('/auth/google', passport.authenticate('google', { scope: ['email', 'profile'] }));
-app.get('/auth/google/callback',
-  passport.authenticate('google', { failureRedirect: '/login' }),
-  (req, res) => res.redirect('/dashboard')
-);
-
-// APPLE
-app.get('/auth/apple', passport.authenticate('apple'));
-app.post('/auth/apple/callback',
-  passport.authenticate('apple', { failureRedirect: '/login' }),
-  (req, res) => res.redirect('/dashboard')
-);
 
 // DONATION
-app.get('/donation', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'donation.html'));
-});
-
-app.post('/donate-now', (req, res) => {
+app.post('/api/donate-now', (req, res) => {
+  // redirect to stripe link
   res.redirect('https://donate.stripe.com/00g02da1bgwA5he5kk');
 });
 
-// DASHBOARD
-app.get('/dashboard', ensureAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'dashboard.html'));
-});
+/* ====================
+   OAUTH ROUTES
+   ==================== */
+app.get('/auth/google', passport.authenticate('google', { scope: ['email', 'profile'] }));
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/login.html' }),
+  (req, res) => {
+    res.redirect('/dashboard.html');
+  }
+);
 
+app.get('/auth/apple', passport.authenticate('apple'));
+app.post('/auth/apple/callback',
+  passport.authenticate('apple', { failureRedirect: '/login.html' }),
+  (req, res) => res.redirect('/dashboard.html')
+);
+
+/* ============================
+   DASHBOARD - AJAX endpoint
+   ============================ */
 app.get('/api/myReport', ensureAuth, async (req, res) => {
   const { rows } = await query('SELECT latest_report FROM users WHERE id=$1', [req.user.id]);
   if (!rows.length) return res.json({ error: 'No user found' });
@@ -179,7 +175,14 @@ app.get('/api/myReport', ensureAuth, async (req, res) => {
   res.json(JSON.parse(lr));
 });
 
-// CRON daily job (8 AM)
+function ensureAuth(req, res, next) {
+  if (req.isAuthenticated()) return next();
+  res.redirect('/login.html');
+}
+
+/* =====================
+   CRON daily job
+   ===================== */
 cron.schedule('0 8 * * *', async () => {
   console.log('[CRON] daily triggered');
   try {
@@ -190,18 +193,14 @@ cron.schedule('0 8 * * *', async () => {
       const label = labelAirNowAQI(aqi);
       const ow = await fetchOpenWeather(user.lat, user.lon);
 
-      // Fire AirNow
       const fireResult = await scrapeFireAirnow('https://fire.airnow.gov/#10/34.1124/-118.1932');
-      const nearFire = fireResult && fireResult.nearFire;
+      const nearFire = fireResult?.nearFire || false;
 
-      // XAPPP
       const xapppData = await scrapeXappp(user.lat, user.lon);
-      // ArcGIS
       const arcgisData = await scrapeArcgis(user.lat, user.lon);
 
       const windColor = getWindStatus(ow.windSpeed, ow.windDeg, nearFire);
 
-      // Construct report
       const lines = [];
       lines.push(`**Average AQI**: ${aqi || 0} (${label})`);
       lines.push(`**Most Recent Wind**: Speed=${ow.windSpeed}, Deg=${ow.windDeg}, Indicator=${windColor}`);
@@ -226,14 +225,7 @@ cron.schedule('0 8 * * *', async () => {
   }
 });
 
-// helper
-function ensureAuth(req, res, next) {
-  if (req.isAuthenticated()) return next();
-  res.redirect('/login');
-}
-
-// START
-app.listen(PORT, async () => {
+app.listen(process.env.PORT || 3000, async () => {
   await initDB();
-  console.log(`Server on ${PORT}, url=${APP_URL}`);
+  console.log(`Server running on port ${process.env.PORT || 3000}`);
 });
