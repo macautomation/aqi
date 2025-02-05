@@ -4,14 +4,12 @@ const { Pool } = pkg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // If needed, set SSL:
   ssl: process.env.DATABASE_SSL ? { rejectUnauthorized: false } : false
 });
 
 export async function initDB() {
   const client = await pool.connect();
   try {
-    // Create tables if they don't exist
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -19,7 +17,8 @@ export async function initDB() {
         password_hash VARCHAR(255),
         address VARCHAR(255),
         lat DOUBLE PRECISION,
-        lon DOUBLE PRECISION
+        lon DOUBLE PRECISION,
+        latest_report TEXT  -- store JSON or text of their last generated report
       );
 
       CREATE TABLE IF NOT EXISTS password_reset_tokens (
@@ -37,8 +36,7 @@ export async function initDB() {
 export async function query(q, params) {
   const client = await pool.connect();
   try {
-    const result = await client.query(q, params);
-    return result;
+    return await client.query(q, params);
   } finally {
     client.release();
   }
