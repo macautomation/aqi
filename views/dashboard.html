@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><title>User Dashboard</title></head>
+<body>
+<h1>Your Dashboard</h1>
+<div id="reportArea">Loading...</div>
+
+<script>
+fetch('/api/myReport')
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) {
+      document.getElementById('reportArea').innerText = data.error;
+    } else if (data.report) {
+      document.getElementById('reportArea').innerText = data.report;
+    } else {
+      document.getElementById('reportArea').innerText = 'No recent report found.';
+    }
+  })
+  .catch(e => {
+    document.getElementById('reportArea').innerText = 'Error loading report: ' + e;
+  });
+</script>
+</body>
+</html>
