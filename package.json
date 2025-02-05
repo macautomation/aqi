@@ -15,11 +15,11 @@
     "passport-apple": "^2.1.0",
     "bcrypt": "^5.1.0",
     "express-session": "^1.17.3",
-    "axios": "^0.27.2", // older version to maintain Node 4 compatibility for SendGrid
-    "puppeteer": "^2.1.1", // older Puppeteer for Node 4 compatibility
+    "axios": "^0.27.2", 
+    "puppeteer": "^2.1.1", 
     "lodash": "^4.17.21",
-    "node-cron": "^2.0.3", // older version for Node < 6
-    "sendgrid": "^2.0.0"   // older version of sendgrid for Node 4
+    "node-cron": "^2.0.3", 
+    "sendgrid": "^2.0.0"   
   },
   "engines": {
     "node": "4.x"
