@@ -3,19 +3,21 @@
 <head>
   <title>Delete Account</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background: #f8f8f8; }
-    .container { max-width: 400px; margin: 0 auto; padding: 20px; background: #fff; border-radius: 4px; }
-    .logo { width: 150px; display: block; margin: 0 auto 10px; }
-    .btn { padding: 10px; margin-top: 10px; cursor: pointer; width: 100%; }
+    body { font-family:Arial,sans-serif; margin:20px; background:#f8f8f8; }
+    .container { max-width:400px; margin:0 auto; background:#fff; padding:20px; border-radius:4px; }
+    .logo { width:150px; display:block; margin:0 auto 10px; }
+    .btn { width:100%; padding:10px; margin-top:10px; cursor:pointer; }
   </style>
 </head>
 <body>
 <div class="container">
-  <img src="/images/logo.png" alt="AQI Updates" class="logo">
+  <img src="../images/logo.png" alt="AQI Updates" class="logo">
   <h1>Are you sure?</h1>
   <p>This will <strong>permanently delete</strong> your account and data.</p>
   <form method="post" action="/api/delete-account">
-    <button type="submit" class="btn" style="background:red; color:#fff;">Yes, delete my account</button>
+    <button type="submit" class="btn" style="background:red; color:#fff;">
+      Yes, delete my account
+    </button>
   </form>
   <button class="btn" onclick="window.location='dashboard.html'">No, go back</button>
 </div>
