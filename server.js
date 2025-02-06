@@ -23,10 +23,6 @@ import sgMail from '@sendgrid/mail';
 sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
 
 
-// Added for test START
-import authRoutes from "./auth.js"; // ✅ Import router from auth.js
-// Added for test END
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
