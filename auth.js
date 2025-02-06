@@ -56,7 +56,7 @@ passport.use('apple', new AppleStrategy({
   clientID: process.env.APPLE_CLIENT_ID || '',
   teamID: process.env.APPLE_TEAM_ID || '',
   keyID: process.env.APPLE_KEY_ID || '',
-  privateKeyString: process.env.APPLE_PRIVATE_KEY || '',
+  privateKeyString: (process.env.APPLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'), // Ensure newlines are preserved
   callbackURL: (process.env.APP_URL || 'http://localhost:3000') + '/auth/apple/callback',
   scope: ['name', 'email']
 }, async (accessToken, refreshToken, idToken, profile, done) => {
