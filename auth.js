@@ -10,7 +10,7 @@ import { query } from './db.js';
 import express from "express";
 import jwt from "jsonwebtoken";
 
-const router = express.Router();
+const router = express.Router(); // ✅ Use router, not app
 
 router.get('/debug/apple-jwt', (req, res) => {
     try {
@@ -39,11 +39,7 @@ router.get('/debug/apple-jwt', (req, res) => {
     }
 });
 
-export default router;
-
-app.get('/debug/apple-jwt', (req, res) => {
-    res.json({ message: "JWT Debugging Route Works!" });
-});
+export default router; // ✅ Export router, NOT app
 // Added for test END
 
 /**
