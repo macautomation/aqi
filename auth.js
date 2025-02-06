@@ -53,13 +53,21 @@ passport.use('google', new GoogleStrategy({
  * Apple Strategy
  */
 passport.use('apple', new AppleStrategy({
-  clientID: process.env.APPLE_CLIENT_ID || '',
-  teamID: process.env.APPLE_TEAM_ID || '',
-  keyID: process.env.APPLE_KEY_ID || '',
-  privateKeyString: (process.env.APPLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'), // Ensure newlines are preserved
+  clientID: process.env.APPLE_CLIENT_ID,
+  teamID: process.env.APPLE_TEAM_ID,
+  keyID: process.env.APPLE_KEY_ID,
+  privateKeyString: process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
   callbackURL: (process.env.APP_URL || 'http://localhost:3000') + '/auth/apple/callback',
   scope: ['name', 'email']
 }, async (accessToken, refreshToken, idToken, profile, done) => {
+  console.log("Access Token:", accessToken);
+  console.log("ID Token:", idToken);
+  console.log("Profile:", profile);
+
+  if (!profile) {
+    return done(new Error("Failed to retrieve profile from Apple"));
+  }
+
   try {
     const email = profile.email || `noemail_${profile.id}@appleuser.com`;
     let { rows } = await query('SELECT * FROM users WHERE email=$1', [email]);
@@ -71,6 +79,7 @@ passport.use('apple', new AppleStrategy({
     }
     return done(null, rows[0]);
   } catch (err) {
+    console.error("Database Error:", err);
     done(err);
   }
 }));
