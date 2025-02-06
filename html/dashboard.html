@@ -5,22 +5,24 @@
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; background: #f8f8f8; }
     .container { max-width: 600px; margin: 0 auto; padding: 20px; background: #fff; border-radius: 4px; }
-    h1 { text-align: center; }
+    h1 { text-align:center; }
     .logo { width: 150px; display: block; margin: 0 auto 10px; }
     #reportArea { white-space: pre-wrap; background: #f0f0f0; padding: 10px; margin: 10px 0; }
     .loadingGif { width: 50px; display: block; margin: 10px auto; }
-    .btn { padding: 10px; margin-top: 10px; cursor: pointer; }
+    .btn { padding: 10px; margin-top: 10px; cursor:pointer; }
+    a { color:#007BFF; text-decoration:none; }
+    a:hover { text-decoration:underline; }
   </style>
 </head>
 <body>
 <div class="container">
-  <img src="/images/logo.png" alt="AQI Updates" class="logo">
+  <img src="../images/logo.png" alt="AQI Updates" class="logo">
 
-  <h1>Welcome to Your Dashboard</h1>
+  <h1>Your Dashboard</h1>
 
   <div id="reportSection">
     <p id="loadingMsg" style="text-align:center; display:none;">
-      <img src="/images/loading.gif" class="loadingGif" alt="Loading...">
+      <img src="../images/loading.gif" class="loadingGif" alt="Loading...">
       <br>Generating your report...
     </p>
     <div id="reportArea">Loading your report...</div>
@@ -35,7 +37,10 @@
   <p>Next daily update in: <span id="dailyCountdown"></span></p>
 
   <hr>
-  <p><a href="/logout">Log Out</a> | <a href="deleteConfirm.html">Delete Account</a></p>
+  <p>
+    <a href="/logout">Log Out</a> | 
+    <a href="deleteConfirm.html">Delete Account</a>
+  </p>
 </div>
 
 <script>
@@ -43,25 +48,23 @@ const reportArea = document.getElementById('reportArea');
 const loadingMsg = document.getElementById('loadingMsg');
 const updateBtn = document.getElementById('updateNowBtn');
 
-// Load the current report
+// load existing
 fetch('/api/myReport')
   .then(r => r.json())
   .then(data => {
     if (data.error) {
       reportArea.innerText = data.error;
     } else if (!data.report) {
-      // no report => show loading, auto fetch
+      // no report => show loading
       showLoading();
       fetchNow();
     } else {
-      // show the report
       reportArea.innerText = data.report;
     }
   })
   .catch(e => { reportArea.innerText = 'Error: ' + e; });
 
-// Button to re-fetch
-updateBtn.addEventListener('click', function() {
+updateBtn.addEventListener('click', () => {
   showLoading();
   fetchNow();
 });
@@ -73,10 +76,8 @@ function showLoading() {
 function hideLoading() {
   loadingMsg.style.display = 'none';
 }
-
-// Actually fetch new report
 function fetchNow() {
-  fetch('/api/report-now', { method: 'POST' })
+  fetch('/api/report-now', { method:'POST' })
     .then(r => r.json())
     .then(data => {
       hideLoading();
@@ -92,36 +93,29 @@ function fetchNow() {
     });
 }
 
-// countdown timers
+// countdown
 function updateCountdowns() {
-  // next hourly: top of next hour
   const now = new Date();
   const nextHour = new Date(now);
-  nextHour.setHours(now.getHours() + 1, 0, 0, 0);
-  const hourlyDiffMs = nextHour - now;
+  nextHour.setHours(now.getHours()+1, 0, 0, 0);
+  const hourlyDiff = nextHour - now;
 
   const nextDaily = new Date(now);
-  // daily at 8 AM
   nextDaily.setHours(8, 0, 0, 0);
-  if (nextDaily <= now) {
-    nextDaily.setDate(nextDaily.getDate() + 1);
-  }
-  const dailyDiffMs = nextDaily - now;
+  if (nextDaily <= now) nextDaily.setDate(nextDaily.getDate()+1);
+  const dailyDiff = nextDaily - now;
 
-  document.getElementById('hourlyCountdown').innerText = formatMs(hourlyDiffMs);
-  document.getElementById('dailyCountdown').innerText = formatMs(dailyDiffMs);
+  document.getElementById('hourlyCountdown').innerText = formatMs(hourlyDiff);
+  document.getElementById('dailyCountdown').innerText = formatMs(dailyDiff);
 }
-
 function formatMs(ms) {
-  const s = Math.floor(ms / 1000);
-  const hh = Math.floor(s / 3600);
-  const mm = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
+  const s = Math.floor(ms/1000);
+  const hh = Math.floor(s/3600);
+  const mm = Math.floor((s%3600)/60);
+  const ss = s%60;
   return `${hh}h ${mm}m ${ss}s`;
 }
-
-// update every second
-setInterval(updateCountdowns, 1000);
+setInterval(updateCountdowns,1000);
 updateCountdowns();
 </script>
 </body>
