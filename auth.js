@@ -6,6 +6,13 @@ import AppleStrategy from 'passport-apple';
 import bcrypt from 'bcrypt';
 import { query } from './db.js';
 
+// Added for test
+import app from "./server.js"; // Adjust the path based on your file structure
+
+app.get('/debug/apple-jwt', (req, res) => {
+    res.json({ message: "JWT Debugging Route Works!" });
+});
+
 /**
  * Local Strategy
  */
