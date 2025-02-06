@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -o errexit  # Exit on error
 
+export PUPPETEER_DOWNLOAD_PATH=/opt/render/.cache/puppeteer
+
 npm install
 
 # Ensure Puppeteer cache directory exists before copying
@@ -12,12 +14,12 @@ else
   mkdir -p "$PUPPETEER_CACHE_DIR"
   
   # Force Puppeteer to download Chromium
-  PUPPETEER_SKIP_DOWNLOAD=false npm rebuild puppeteer-core chrome-aws-lambda
+  PUPPETEER_SKIP_DOWNLOAD=false npm install puppeteer-core chrome-aws-lambda --force
   
-  # Verify that Chromium was actually installed
-  if [[ -d "$XDG_CACHE_HOME/puppeteer" && "$(ls -A "$XDG_CACHE_HOME/puppeteer")" ]]; then
+  # Verify if Chromium was actually installed
+  if [[ -d "$PUPPETEER_DOWNLOAD_PATH" && "$(ls -A "$PUPPETEER_DOWNLOAD_PATH")" ]]; then
     echo "...Storing Puppeteer Cache in Build Cache"
-    cp -R "$XDG_CACHE_HOME/puppeteer"/* "$PUPPETEER_CACHE_DIR/"
+    cp -R "$PUPPETEER_DOWNLOAD_PATH"/* "$PUPPETEER_CACHE_DIR/"
   else
     echo "❌ Chromium installation failed!"
     exit 1
