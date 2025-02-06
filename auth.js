@@ -99,7 +99,7 @@ passport.deserializeUser(async (id, done) => {
 });
 
 // Test JWT
-const jwt = require("jsonwebtoken");
+import jwt from "jsonwebtoken";
 
 app.get('/debug/apple-jwt', (req, res) => {
     try {
