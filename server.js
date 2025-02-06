@@ -26,8 +26,6 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
 // Added for test START
 import authRoutes from "./auth.js"; // Import the router
 
-const app = express();
-
 // Use auth routes
 app.use("/auth", authRoutes);
 
