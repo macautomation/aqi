@@ -3,7 +3,7 @@
 <head>
   <title>Sign Up</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background: #f8f8f8; }
+    body { font-family: Arial, sans-serif; margin:20px; background: #f8f8f8; }
     .container { max-width: 400px; margin: 0 auto; padding: 20px; background: #fff; border-radius: 4px; }
     h1 { text-align: center; }
     label { display: block; margin-top: 10px; }
@@ -13,14 +13,13 @@
     button { margin-top: 15px; padding: 10px; width: 100%; cursor: pointer; }
     .oauth-images img { width: 200px; margin: 5px 0; cursor: pointer; }
     .logo { width: 150px; display: block; margin: 0 auto 10px; }
+    a { color:#007BFF; text-decoration:none; }
+    a:hover { text-decoration:underline; }
   </style>
-
-  <!-- Google Places Autocomplete -->
-  <script src="/js/autocomplete.js"></script>
 </head>
 <body>
   <div class="container">
-    <img src="/images/logo.png" alt="AQI Updates" class="logo">
+    <img src="../images/logo.png" alt="AQI Updates" class="logo">
 
     <h1>Sign Up</h1>
 
@@ -37,14 +36,31 @@
       <label>Address:
         <input type="text" id="addressInput" name="address" required>
       </label>
+
+      <label>
+        <input type="checkbox" name="agreePolicy" required>
+        I have read and agree to the <a href="privacy.html" target="_blank">Privacy Policy</a>.
+      </label>
+      <label>
+        <input type="checkbox" name="agreeTerms" required>
+        I have read and agree to the <a href="terms.html" target="_blank">User Terms & Agreement</a>.
+      </label>
+
       <button type="submit">Sign Up</button>
     </form>
 
     <div style="text-align:center; margin: 15px 0;">
-      <p>Or sign up with:</p>
+      <p>Or sign up with (Check the boxes above before clicking):</p>
+      <label>
+        <input type="checkbox" id="agreePolicy2"> I agree to Privacy & Terms
+      </label>
       <div class="oauth-images">
-        <a href="/auth/google"><img src="/images/googleSignUp.png" alt="Sign up with Google"></a>
-        <a href="/auth/apple"><img src="/images/appleSignUp.png" alt="Sign up with Apple"></a>
+        <a href="#" onclick="checkBoxes('/auth/google')">
+          <img src="../images/googleSignUp.png" alt="Sign up with Google">
+        </a>
+        <a href="#" onclick="checkBoxes('/auth/apple')">
+          <img src="../images/appleSignUp.png" alt="Sign up with Apple">
+        </a>
       </div>
     </div>
 
@@ -53,13 +69,17 @@
     </p>
   </div>
 
+  <!-- Hide Google Places key using a small script from server -->
+  <script src="/js/autocomplete.js"></script>
   <script>
-    function initAutocomplete() {
-      const input = document.getElementById('addressInput');
-      const options = {};
-      new google.maps.places.Autocomplete(input, options);
+    function checkBoxes(url) {
+      const agreed = document.getElementById('agreePolicy2').checked;
+      if (!agreed) {
+        alert("Please agree to policy & terms before signing up with Google/Apple.");
+        return;
+      }
+      window.location = url;
     }
-    window.onload = initAutocomplete;
   </script>
 </body>
 </html>
