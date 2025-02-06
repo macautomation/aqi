@@ -6,42 +6,6 @@ import AppleStrategy from 'passport-apple';
 import bcrypt from 'bcrypt';
 import { query } from './db.js';
 
-// Added for test START
-import express from "express";
-import jwt from "jsonwebtoken";
-
-const router = express.Router(); // ✅ Use router, not app
-
-router.get('/debug/apple-jwt', (req, res) => {
-    try {
-        const teamID = process.env.APPLE_TEAM_ID;
-        const keyID = process.env.APPLE_KEY_ID;
-        const clientID = process.env.APPLE_CLIENT_ID;
-        const privateKey = process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, '\n');
-
-        const claims = {
-            iss: teamID,
-            iat: Math.floor(Date.now() / 1000),
-            exp: Math.floor(Date.now() / 1000) + 86400 * 180, // 6 months
-            aud: "https://appleid.apple.com",
-            sub: clientID
-        };
-
-        const clientSecret = jwt.sign(claims, privateKey, {
-            algorithm: "ES256",
-            keyid: keyID,
-        });
-
-        res.json({ clientSecret });
-    } catch (err) {
-        console.error("JWT Error:", err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-export default router; // ✅ Export router, NOT app
-// Added for test END
-
 /**
  * Local Strategy
  */
