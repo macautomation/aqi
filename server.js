@@ -391,3 +391,6 @@ app.listen(process.env.PORT||3000, async()=>{
   await initDB();
   console.log(`Server running on port ${process.env.PORT||3000}`);
 });
+
+//Added for test
+export default app;
