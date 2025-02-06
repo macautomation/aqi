@@ -1,9 +1,49 @@
 <!DOCTYPE html>
 <html>
-<head><title>Air Quality Project</title></head>
+<head>
+  <title>AQI Updates by Little Giant Software</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin:0; padding:0; background: #f8f8f8; }
+    header { text-align:center; padding: 20px; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,0.1); }
+    .logo { width: 180px; }
+    .main { max-width:600px; margin:30px auto; background:#fff; padding:20px; border-radius:4px; }
+    #cookieBanner {
+      position:fixed; bottom:0; left:0; right:0; background:#222; color:#fff; 
+      padding:10px; text-align:center; display:none; z-index:9999;
+    }
+    #cookieBanner button { margin-left: 10px; padding:5px 10px; cursor:pointer; }
+    a { color:#007BFF; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+  </style>
+</head>
 <body>
-  <h1>Welcome to Air Quality Updates</h1>
-  <p><a href="signup.html">Sign Up</a> or <a href="login.html">Log In</a></p>
-  <p><a href="donation.html">Donate</a></p>
+
+<header>
+  <img src="images/logo.png" alt="AQI Updates" class="logo">
+</header>
+
+<div class="main">
+  <h1>Welcome to AQI Updates</h1>
+  <p><a href="html/signup.html">Sign Up</a> or <a href="html/login.html">Log In</a></p>
+  <p><a href="html/donation.html">Donate</a></p>
+</div>
+
+<div id="cookieBanner">
+  This site uses cookies to enhance your experience. 
+  <button onclick="acceptCookies()">Accept</button>
+</div>
+
+<script>
+function acceptCookies() {
+  document.cookie = "cookieConsent=1; path=/; max-age=31536000"; // 1 year
+  document.getElementById('cookieBanner').style.display = 'none';
+}
+window.onload = function() {
+  if (!document.cookie.includes('cookieConsent=1')) {
+    document.getElementById('cookieBanner').style.display = 'block';
+  }
+};
+</script>
+
 </body>
 </html>
