@@ -24,16 +24,17 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
 
 
 // Added for test START
-import authRoutes from "./auth.js"; // Import the router
+import authRoutes from "./auth.js"; // ✅ Import router from auth.js
 
-// Use auth routes
-app.use("/auth", authRoutes);
+const app = express();
 
-// Start the server
+app.use("/auth", authRoutes); // ✅ Mount the auth routes
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 export default app;
+
 // Added for test END
 
 const __filename = fileURLToPath(import.meta.url);
