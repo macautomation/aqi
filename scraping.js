@@ -1,5 +1,5 @@
 // scraping.js
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
 
 // (A) Fire AirNow
 export async function scrapeFireAirnow(url) {
