@@ -8,8 +8,8 @@ export async function scrapeFireAirnow(url) {
   try {
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: await chromium.executablePath,
-      args: chromium.args, // Fix: Use chromium.args
+      executablePath: process.env.CHROMIUM_PATH || await chromium.executablePath,
+      args: chromium.args,
       defaultViewport: chromium.defaultViewport
      /* args: [
         '--no-sandbox',
@@ -48,8 +48,8 @@ export async function scrapeXappp(lat, lon) {
   try {
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: await chromium.executablePath,
-      args: chromium.args, // Fix: Use chromium.args
+      executablePath: process.env.CHROMIUM_PATH || await chromium.executablePath,
+      args: chromium.args,
       defaultViewport: chromium.defaultViewport
      /* args: [
         '--no-sandbox',
@@ -86,8 +86,8 @@ export async function scrapeArcgis(lat, lon) {
   try {
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: await chromium.executablePath,
-      args: chromium.args, // Fix: Use chromium.args
+      executablePath: process.env.CHROMIUM_PATH || await chromium.executablePath,
+      args: chromium.args,
       defaultViewport: chromium.defaultViewport
      /* args: [
         '--no-sandbox',
