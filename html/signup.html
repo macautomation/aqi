@@ -11,75 +11,83 @@
     input[type="email"],
     input[type="password"] { width: 100%; padding: 8px; margin-top: 5px; }
     button { margin-top: 15px; padding: 10px; width: 100%; cursor: pointer; }
-    .oauth-images img { width: 200px; margin: 5px 0; cursor: pointer; }
     .logo { width: 150px; display: block; margin: 0 auto 10px; }
-    a { color:#007BFF; text-decoration:none; }
-    a:hover { text-decoration:underline; }
+    a { color: #007BFF; text-decoration: none; }
+    a:hover { text-decoration: underline; }
   </style>
+  <!-- Hide Google key => We'll load from /js/autocomplete.js instead -->
 </head>
 <body>
-  <div class="container">
-    <img src="../images/logo.png" alt="AQI Updates" class="logo">
+<div class="container">
+  <img src="../images/logo.png" alt="AQI Updates" class="logo">
 
-    <h1>Sign Up</h1>
+  <h1>Sign Up</h1>
+  <form method="post" action="/api/signup">
+    <label>Email:
+      <input type="email" name="email" required>
+    </label>
+    <label>Password:
+      <input type="password" name="password" required>
+    </label>
+    <label>Confirm Password:
+      <input type="password" name="password2" required>
+    </label>
+    <label>Address:
+      <input type="text" id="addressInput" name="address" required>
+    </label>
 
-    <form method="post" action="/api/signup">
-      <label>Email:
-        <input type="email" name="email" required>
-      </label>
-      <label>Password:
-        <input type="password" name="password" required>
-      </label>
-      <label>Confirm Password:
-        <input type="password" name="password2" required>
-      </label>
-      <label>Address:
-        <input type="text" id="addressInput" name="address" required>
-      </label>
+    <label>
+      <input type="checkbox" name="agreePolicy" required>
+      I have read and agree to the <a href="privacy.html" target="_blank">Privacy Policy</a>.
+    </label>
+    <label>
+      <input type="checkbox" name="agreeTerms" required>
+      I have read and agree to the <a href="terms.html" target="_blank">User Terms & Agreement</a>.
+    </label>
 
-      <label>
-        <input type="checkbox" name="agreePolicy" required>
-        I have read and agree to the <a href="privacy.html" target="_blank">Privacy Policy</a>.
-      </label>
-      <label>
-        <input type="checkbox" name="agreeTerms" required>
-        I have read and agree to the <a href="terms.html" target="_blank">User Terms & Agreement</a>.
-      </label>
+    <button type="submit">Sign Up</button>
+  </form>
 
-      <button type="submit">Sign Up</button>
-    </form>
+  <hr>
+  <p>Or sign up using official buttons below:</p>
 
-    <div style="text-align:center; margin: 15px 0;">
-      <p>Or sign up with (Check the boxes above before clicking):</p>
-      <label>
-        <input type="checkbox" id="agreePolicy2"> I agree to Privacy & Terms
-      </label>
-      <div class="oauth-images">
-        <a href="#" onclick="checkBoxes('/auth/google')">
-          <img src="../images/googleSignUp.png" alt="Sign up with Google">
-        </a>
-        <a href="#" onclick="checkBoxes('/auth/apple')">
-          <img src="../images/appleSignUp.png" alt="Sign up with Apple">
-        </a>
-      </div>
-    </div>
-
-    <p style="text-align:center;">
-      Already have an account? <a href="login.html">Log in</a>
-    </p>
+  <!-- Google GSI code snippet -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <div id="g_id_onload"
+       data-client_id="YOUR_GOOGLE_CLIENT_ID"
+       data-login_uri="https://YOUR_DOMAIN.com/google-signin-callback"
+       data-auto_prompt="false">
+  </div>
+  <div class="g_id_signin"
+       data-type="standard"
+       data-size="large"
+       data-theme="outline"
+       data-text="continue_with"
+       data-shape="rectangular"
+       data-logo_alignment="left">
   </div>
 
-  <!-- Hide Google Places key using a small script from server -->
-  <script src="/js/autocomplete.js"></script>
+  <hr>
+  <!-- Apple Sign In snippet -->
+  <script src="https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js"></script>
+  <div id="appleid-signin" data-color="black" data-border="true" data-type="sign in"></div>
   <script>
-    function checkBoxes(url) {
-      const agreed = document.getElementById('agreePolicy2').checked;
-      if (!agreed) {
-        alert("Please agree to policy & terms before signing up with Google/Apple.");
-        return;
-      }
-      window.location = url;
-    }
+  document.addEventListener('DOMContentLoaded', function(){
+    AppleID.auth.init({
+      clientId : 'com.example.appid',
+      scope : 'name email',
+      redirectURI: 'https://YOUR_DOMAIN.com/apple-signin-callback',
+      usePopup: true
+    });
+  });
   </script>
+
+  <p style="text-align:center; margin-top:20px;">
+    Already have an account? <a href="login.html">Log in</a>
+  </p>
+</div>
+
+<!-- Our address autocomplete script -->
+<script src="/js/autocomplete.js"></script>
 </body>
 </html>
