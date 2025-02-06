@@ -18,6 +18,27 @@ import { fetchOpenWeather, fetchAirNowAQI, labelAirNowAQI, getWindStatus } from 
 import { scrapeFireAirnow, scrapeXappp, scrapeArcgis } from './scraping.js';
 import { distanceMiles } from './utils.js';
 
+// Google Maps API
+app.get('/js/autocomplete.js', (req, res) => {
+  const key = process.env.GOOGLE_PLACES_KEY || ''; // or reuse process.env.GOOGLE_GEOCODE_KEY if same
+  // Return a small JS snippet that loads google maps with the key
+  const content = `
+    function loadGooglePlaces() {
+      var script = document.createElement('script');
+      script.src = "https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&callback=initAutocomplete";
+      document.head.appendChild(script);
+    }
+    function initAutocomplete() {
+      var input = document.getElementById('addressInput');
+      if (!input) return;
+      new google.maps.places.Autocomplete(input);
+    }
+    window.onload = loadGooglePlaces;
+  `;
+  res.setHeader('Content-Type', 'application/javascript');
+  res.send(content);
+});
+
 // SendGrid
 import sgMail from '@sendgrid/mail';
 sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
