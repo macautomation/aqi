@@ -2,7 +2,7 @@
 import express from 'express';
 import session from 'express-session';
 import pgSession from 'connect-pg-simple';
-import pkg from 'pg'; // Use default import for CommonJS
+import pkg from 'pg'; // use default import for CommonJS
 const { Pool } = pkg;
 import passport from 'passport';
 import bodyParser from 'body-parser';
@@ -14,35 +14,33 @@ import cron from 'node-cron';
 import axios from 'axios';
 
 import { initDB, query } from './db.js';
-import './auth.js'; // local, google, apple passport (still present if you want to use them)
+import './auth.js'; // local, google, apple passport
 import { fetchOpenWeather, fetchAirNowAQI, labelAirNowAQI, getWindStatus } from './weather.js';
 import { scrapeFireAirnow, scrapeXappp, scrapeArcgis } from './scraping.js';
 import { distanceMiles } from './utils.js';
 
-// SendGrid for emails
+// SendGrid
 import sgMail from '@sendgrid/mail';
 sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
 
-// Node & path
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Postgres pool for sessions
+// Postgres pool for session store
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_SSL ? { rejectUnauthorized: false } : false
 });
 const PgSession = pgSession(session);
 
-// Express
 const app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Session with PG store, auto-create session table if missing
+// Session config
 app.use(session({
   store: new PgSession({
     pool,
-    createTableIfMissing: true 
+    createTableIfMissing: true
   }),
   secret: process.env.SESSION_SECRET || 'keyboard cat',
   resave: false,
@@ -52,12 +50,10 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Serve static files from root + /html folder
+// Serve static from root (index.html) + /html
 app.use(express.static(__dirname));
 
-/**
- * Hide your Google Places key in a small JS route
- */
+// Hide Google Places key with a small route
 app.get('/js/autocomplete.js', (req, res) => {
   const key = process.env.GOOGLE_GEOCODE_KEY || '';
   const content = `
@@ -77,13 +73,18 @@ app.get('/js/autocomplete.js', (req, res) => {
   res.send(content);
 });
 
-// Helper: Send email with SendGrid
+// Helper: Send email
 async function sendEmail(to, subject, text) {
-  const msg = { to, from: 'noreply@littlegiant.app', subject, text };
+  const msg = {
+    to,
+    from: 'noreply@littlegiant.app',
+    subject,
+    text
+  };
   await sgMail.send(msg);
 }
 
-// Simple password complexity
+// Password complexity
 function isPasswordComplex(password) {
   if (password.length < 8) return false;
   if (!/[0-9]/.test(password)) return false;
@@ -92,11 +93,11 @@ function isPasswordComplex(password) {
   return true;
 }
 
-// SIGN UP 
+// SIGN UP
 app.post('/api/signup', async (req, res) => {
   const { email, password, password2, address, agreePolicy, agreeTerms } = req.body;
-  if (!email || !password || !password2 || !address) {
-    return res.status(400).send('All fields are required.');
+  if (!email || !password || !password2) {
+    return res.status(400).send('All fields are required (email, password).');
   }
   if (!agreePolicy || !agreeTerms) {
     return res.status(400).send('You must accept the privacy policy & terms.');
@@ -109,31 +110,47 @@ app.post('/api/signup', async (req, res) => {
   }
 
   try {
-    let lat = null, lon = null;
-    if (process.env.GOOGLE_GEOCODE_KEY) {
-      const geoURL = 'https://maps.googleapis.com/maps/api/geocode/json';
-      const resp = await axios.get(geoURL, {
-        params: { address, key: process.env.GOOGLE_GEOCODE_KEY }
-      });
-      if (resp.data.results?.length) {
-        lat = resp.data.results[0].geometry.location.lat;
-        lon = resp.data.results[0].geometry.location.lng;
-      }
-    }
     const hash = await bcrypt.hash(password, 10);
 
-    // Store initial manualRequests usage
-    await query(`
-      INSERT INTO users (email, password_hash, address, lat, lon, latest_report)
-      VALUES ($1, $2, $3, $4, $5, $6)
-    `, [email, hash, address, lat, lon, JSON.stringify({
-      manualRequests: { count: 0, resetAt: null }
-    })]);
+    // create user
+    const result = await query(`
+      INSERT INTO users (email, password_hash, latest_report)
+      VALUES ($1, $2, $3)
+      RETURNING id
+    `, [email, hash, JSON.stringify({})]);
+    const newUserId = result.rows[0].id;
 
-    // Confirmation email
+    // if user typed an address, store it (up to 1 here)
+    if (address && address.trim()) {
+      let lat = null, lon = null;
+      if (process.env.GOOGLE_GEOCODE_KEY) {
+        const geoURL = 'https://maps.googleapis.com/maps/api/geocode/json';
+        // START DEBUG
+        console.log('Geocoding address:', address);
+        // END DEBUG
+        const resp = await axios.get(geoURL, {
+          params: { address, key: process.env.GOOGLE_GEOCODE_KEY }
+        });
+        // START DEBUG
+        console.log('Geocode result:', JSON.stringify(resp.data));
+        // END DEBUG
+
+        if (resp.data.results?.length) {
+          lat = resp.data.results[0].geometry.location.lat;
+          lon = resp.data.results[0].geometry.location.lng;
+        }
+      }
+      // Insert into user_addresses if lat/lon found or not
+      await query(`
+        INSERT INTO user_addresses (user_id, address, lat, lon)
+        VALUES ($1, $2, $3, $4)
+      `, [newUserId, address.trim(), lat, lon]);
+    }
+
+    // Send sign-up confirm email
     const dashLink = `${process.env.APP_URL || 'http://localhost:3000'}/html/dashboard.html`;
     await sendEmail(email, 'Welcome to AQI Updates',
-      `Thanks for signing up!\n\nVisit your dashboard here:\n${dashLink}\nEnjoy!`);
+      `Thanks for signing up!\nYour Dashboard:\n${dashLink}\nEnjoy!`);
 
     res.redirect('/html/login.html');
   } catch (err) {
@@ -142,18 +159,54 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
+// ADD ADDRESS (max 3)
+app.post('/api/add-address', ensureAuth, async (req, res) => {
+  const { address } = req.body;
+  if (!address) return res.status(400).send('No address provided');
+
+  // check how many addresses user has
+  const countRes = await query('SELECT COUNT(*) FROM user_addresses WHERE user_id=$1', [req.user.id]);
+  const addressCount = parseInt(countRes.rows[0].count, 10);
+  if (addressCount >= 3) {
+    return res.status(400).send('Max 3 addresses allowed.');
+  }
+
+  let lat = null, lon = null;
+  if (process.env.GOOGLE_GEOCODE_KEY) {
+    // geocode
+    const geoURL = 'https://maps.googleapis.com/maps/api/geocode/json';
+    const resp = await axios.get(geoURL, {
+      params: { address, key: process.env.GOOGLE_GEOCODE_KEY }
+    });
+    if (resp.data.results?.length) {
+      lat = resp.data.results[0].geometry.location.lat;
+      lon = resp.data.results[0].geometry.location.lng;
+    }
+  }
+  await query(`
+    INSERT INTO user_addresses (user_id, address, lat, lon)
+    VALUES ($1, $2, $3, $4)
+  `, [req.user.id, address.trim(), lat, lon]);
+
+  res.redirect('/html/dashboard.html');
+});
+
+// DELETE ADDRESS
+app.post('/api/delete-address', ensureAuth, async (req, res) => {
+  const { addressId } = req.body;
+  if (!addressId) return res.status(400).send('No addressId provided');
+  // ensure user owns this address
+  await query('DELETE FROM user_addresses WHERE id=$1 AND user_id=$2', [addressId, req.user.id]);
+  res.redirect('/html/dashboard.html');
+});
+
 // LOGIN (Local)
 app.post('/api/login',
   passport.authenticate('local', { failureRedirect: '/html/login.html' }),
-  (req, res) => res.redirect('/html/dashboard.html')
+  (req, res) => {
+    res.redirect('/html/dashboard.html');
+  }
 );
-
-// LOGOUT
-app.get('/logout', (req, res) => {
-  req.logout(() => {
-    res.redirect('/index.html');
-  });
-});
 
 // FORGOT
 app.post('/api/forgot', async (req, res) => {
@@ -199,137 +252,138 @@ app.post('/api/reset', async (req, res) => {
   res.send('Password reset. <a href="login.html">Log in</a>');
 });
 
-// DELETE ACCOUNT
-app.post('/api/delete-account', ensureAuth, async (req, res) => {
-  const userId = req.user.id;
-  await query('DELETE FROM users WHERE id=$1', [userId]);
+// LOGOUT
+app.get('/logout', (req, res) => {
   req.logout(() => {
     res.redirect('/index.html');
   });
 });
 
-// DONATION
-app.post('/api/donate-now', (req, res) => {
-  res.redirect('https://donate.stripe.com/00g02da1bgwA5he5kk');
-});
+// GOOGLE OAUTH (Passport)
+app.get('/auth/google', passport.authenticate('google', { scope: ['email','profile'] }));
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/html/login.html' }),
+  (req, res) => res.redirect('/html/dashboard.html')
+);
 
-/** 
- * Google Identity / Apple sign-in are now done 
- * in front-end (GSI snippet / Apple snippet).
- * The old '/auth/google' or '/auth/apple' routes 
- * remain if needed for a different approach.
- * 
- * If you want to remove them completely, 
- * remove the passport code in auth.js / these routes.
- */
+// APPLE OAUTH (Passport)
+app.get('/auth/apple', passport.authenticate('apple'));
+app.post('/auth/apple/callback',
+  passport.authenticate('apple', { failureRedirect: '/html/login.html' }),
+  (req, res) => res.redirect('/html/dashboard.html')
+);
 
-// CURRENT REPORT
+// GET REPORT
 app.get('/api/myReport', ensureAuth, async (req, res) => {
-  const { rows } = await query('SELECT latest_report FROM users WHERE id=$1', [req.user.id]);
-  if (!rows.length) return res.json({ error: 'No user found' });
-  const lr = rows[0].latest_report || '{}';
-  res.json(JSON.parse(lr));
-});
+  // We'll load the user_addresses for this user
+  const addrRes = await query('SELECT * FROM user_addresses WHERE user_id=$1', [req.user.id]);
+  if (!addrRes.rows.length) {
+    return res.json({ error: 'No addresses. Please add an address.' });
+  }
+  const addresses = addrRes.rows;
 
-// TRIGGER IMMEDIATE REPORT (2x / 24hr limit)
-app.post('/api/report-now', ensureAuth, async (req, res) => {
-  try {
-    const { rows } = await query('SELECT latest_report, lat, lon FROM users WHERE id=$1', [req.user.id]);
-    if (!rows.length) return res.status(400).json({ error: 'No user found' });
-
-    const user = rows[0];
-    let lr = user.latest_report ? JSON.parse(user.latest_report) : {};
-    let manReq = lr.manualRequests || { count: 0, resetAt: null };
-
-    const now = Date.now();
-    if (manReq.resetAt && now > manReq.resetAt) {
-      manReq.count = 0;
-      manReq.resetAt = null;
+  // We'll create a single combined "report" from all addresses
+  let combined = [];
+  for (const row of addresses) {
+    const lat = row.lat, lon = row.lon;
+    if (!lat || !lon) {
+      combined.push(`Address: ${row.address}\n(No lat/lon, cannot produce AQI)`);
+      continue;
     }
-    if (manReq.count >= 2) {
-      return res.status(429).json({ error: 'Max 2 manual updates in 24 hours reached.' });
-    }
-    if (!user.lat || !user.lon) {
-      return res.status(400).json({ error: 'No lat/lon for user.' });
-    }
-
-    manReq.count += 1;
-    if (manReq.count === 1) {
-      manReq.resetAt = now + (24 * 3600 * 1000);
-    }
-
-    const aqi = await fetchAirNowAQI(user.lat, user.lon);
+    const aqi = await fetchAirNowAQI(lat, lon);
     const label = labelAirNowAQI(aqi);
-    const ow = await fetchOpenWeather(user.lat, user.lon);
+    const ow = await fetchOpenWeather(lat, lon);
 
     const fireResult = await scrapeFireAirnow('https://fire.airnow.gov/#10/34.1124/-118.1932');
     const nearFire = fireResult?.nearFire || false;
 
-    const xapppData = await scrapeXappp(user.lat, user.lon);
-    const arcgisData = await scrapeArcgis(user.lat, user.lon);
+    const xapppData = await scrapeXappp(lat, lon);
+    const arcgisData = await scrapeArcgis(lat, lon);
 
     const windColor = getWindStatus(ow.windSpeed, ow.windDeg, nearFire);
 
-    const lines = [];
+    let lines = [];
+    lines.push(`Address: ${row.address}`);
     lines.push(`**Average AQI**: ${aqi || 0} (${label})`);
-    lines.push(`**Most Recent Wind**: Speed=${ow.windSpeed}, Deg=${ow.windDeg}, Indicator=${windColor}`);
+    lines.push(`**Wind**: Speed=${ow.windSpeed}, Deg=${ow.windDeg}, Indicator=${windColor}`);
     if (xapppData) lines.push(`Station: ${xapppData.station}, AQI=${xapppData.aqiText || 'N/A'}`);
     if (arcgisData) lines.push(`ArcGIS: ${arcgisData.note}`);
-    if (nearFire) lines.push(`You are near a fire boundary (within 50 miles)`);
+    if (nearFire) lines.push(`Near fire boundary (<50 miles)`);
+    combined.push(lines.join('\n'));
+  }
+  const finalReport = combined.join('\n\n');
+  return res.json({ report: finalReport });
+});
 
-    const reportStr = lines.join('\n');
-    lr.report = reportStr;
-    lr.manualRequests = manReq;
-
-    await query('UPDATE users SET latest_report=$1 WHERE id=$2', [JSON.stringify(lr), req.user.id]);
-    res.json({ report: reportStr });
+// MANUAL RECHECK
+app.post('/api/report-now', ensureAuth, async (req, res) => {
+  // same logic as /api/myReport, but also apply the 2/day limit if you prefer
+  // For simplicity, we'll just call GET /api/myReport logic:
+  const url = `${req.protocol}://${req.get('host')}/api/myReport`;
+  try {
+    const resp = await axios.get(url, {
+      headers: { cookie: req.headers.cookie || '' }
+    });
+    if (resp.data.error) return res.status(400).json({ error: resp.data.error });
+    return res.json({ report: resp.data.report });
   } catch (err) {
-    console.error('[POST /api/report-now]', err);
-    res.status(500).json({ error: 'Internal error' });
+    console.error('[report-now error]', err);
+    return res.status(500).json({ error: 'Internal error' });
   }
 });
 
-// CRON daily (8 AM)
+// CRON daily
 cron.schedule('0 8 * * *', async () => {
   console.log('[CRON] daily triggered');
   try {
-    const { rows } = await query('SELECT * FROM users');
-    for (const u of rows) {
-      if (!u.lat || !u.lon) continue;
-      let lr = u.latest_report ? JSON.parse(u.latest_report) : {};
-      if (!lr.manualRequests) lr.manualRequests = { count: 0, resetAt: null };
+    // load all users
+    const { rows:users } = await query('SELECT id, email FROM users');
+    for (const user of users) {
+      // find addresses
+      const { rows:addresses } = await query('SELECT * FROM user_addresses WHERE user_id=$1', [user.id]);
+      if (!addresses.length) {
+        // no addresses => skip or send an email?
+        console.log(`User ${user.email} has no addresses, skipping daily email.`);
+        continue;
+      }
+      let combined = [];
+      for (const row of addresses) {
+        if (!row.lat || !row.lon) {
+          combined.push(`Address: ${row.address}\n(No lat/lon)`);
+          continue;
+        }
+        const aqi = await fetchAirNowAQI(row.lat, row.lon);
+        const label = labelAirNowAQI(aqi);
+        const ow = await fetchOpenWeather(row.lat, row.lon);
 
-      const aqi = await fetchAirNowAQI(u.lat, u.lon);
-      const label = labelAirNowAQI(aqi);
-      const ow = await fetchOpenWeather(u.lat, u.lon);
+        const fireResult = await scrapeFireAirnow('https://fire.airnow.gov/#10/34.1124/-118.1932');
+        const nearFire = fireResult?.nearFire || false;
 
-      const fireResult = await scrapeFireAirnow('https://fire.airnow.gov/#10/34.1124/-118.1932');
-      const nearFire = fireResult?.nearFire || false;
+        const xapppData = await scrapeXappp(row.lat, row.lon);
+        const arcgisData = await scrapeArcgis(row.lat, row.lon);
 
-      const xapppData = await scrapeXappp(u.lat, u.lon);
-      const arcgisData = await scrapeArcgis(u.lat, u.lon);
-      const windColor = getWindStatus(ow.windSpeed, ow.windDeg, nearFire);
+        const windColor = getWindStatus(ow.windSpeed, ow.windDeg, nearFire);
 
-      const lines = [];
-      lines.push(`**Average AQI**: ${aqi || 0} (${label})`);
-      lines.push(`**Most Recent Wind**: Speed=${ow.windSpeed}, Deg=${ow.windDeg}, Indicator=${windColor}`);
-      if (xapppData) lines.push(`Station: ${xapppData.station}, AQI=${xapppData.aqiText || 'N/A'}`);
-      if (arcgisData) lines.push(`ArcGIS: ${arcgisData.note}`);
-      if (nearFire) lines.push(`You are near a fire boundary (within 50 miles)`);
+        let lines = [];
+        lines.push(`Address: ${row.address}`);
+        lines.push(`**Average AQI**: ${aqi||0} (${label})`);
+        lines.push(`**Wind**: Speed=${ow.windSpeed}, Deg=${ow.windDeg}, Indicator=${windColor}`);
+        if (xapppData) lines.push(`Station: ${xapppData.station}, AQI=${xapppData.aqiText||'N/A'}`);
+        if (arcgisData) lines.push(`ArcGIS: ${arcgisData.note}`);
+        if (nearFire) lines.push(`Near fire boundary (<50 miles)`);
+        combined.push(lines.join('\n'));
+      }
+      const finalReport = combined.join('\n\n');
+      if (!finalReport) continue;
 
-      const reportStr = lines.join('\n');
-      lr.report = reportStr;
-
-      await query('UPDATE users SET latest_report=$1 WHERE id=$2', [JSON.stringify(lr), u.id]);
-      await sendEmail(u.email, 'Your Daily Air Update', reportStr);
-      console.log(`Sent daily update to ${u.email}`);
+      await sendEmail(user.email, 'Your Daily AQI Update', finalReport);
+      console.log(`Sent daily update to ${user.email}`);
     }
   } catch (err) {
     console.error('[CRON daily]', err);
   }
 });
 
-// Ensure user is logged in
 function ensureAuth(req, res, next) {
   if (req.isAuthenticated()) return next();
   res.redirect('/html/login.html');
