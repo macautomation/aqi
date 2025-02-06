@@ -8,9 +8,10 @@ export async function scrapeFireAirnow(url) {
   try {
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: process.env.CHROMIUM_PATH || await chromium.executablePath,
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport
+      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
+      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+      defaultViewport: chromium.defaultViewport,
+      userDataDir: "/tmp/chrome-user-data",
      /* args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -48,9 +49,10 @@ export async function scrapeXappp(lat, lon) {
   try {
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: process.env.CHROMIUM_PATH || await chromium.executablePath,
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport
+      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
+      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+      defaultViewport: chromium.defaultViewport,
+      userDataDir: "/tmp/chrome-user-data",
      /* args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -86,9 +88,11 @@ export async function scrapeArcgis(lat, lon) {
   try {
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: process.env.CHROMIUM_PATH || await chromium.executablePath,
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport
+      headless: true,
+      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
+      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+      defaultViewport: chromium.defaultViewport,
+      userDataDir: "/tmp/chrome-user-data",
      /* args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
