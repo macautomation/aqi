@@ -3,19 +3,21 @@
 <head>
   <title>Sign Up</title>
   <style>
-    body { font-family: Arial, sans-serif; margin:20px; background: #f8f8f8; }
-    .container { max-width: 400px; margin: 0 auto; padding: 20px; background: #fff; border-radius: 4px; }
-    h1 { text-align: center; }
-    label { display: block; margin-top: 10px; }
-    input[type="text"],
+    body { font-family: Arial,sans-serif; margin:20px; background:#f8f8f8; }
+    .container { max-width:400px; margin:0 auto; padding:20px; background:#fff; border-radius:4px; }
+    h1 { text-align:center; }
+    label { display:block; margin-top:10px; }
     input[type="email"],
-    input[type="password"] { width: 100%; padding: 8px; margin-top: 5px; }
-    button { margin-top: 15px; padding: 10px; width: 100%; cursor: pointer; }
-    .logo { width: 150px; display: block; margin: 0 auto 10px; }
-    a { color: #007BFF; text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    input[type="password"],
+    input[type="text"] {
+      width:100%; padding:8px; margin-top:5px;
+    }
+    button { margin-top:15px; padding:10px; width:100%; cursor:pointer; }
+    .logo { width:150px; display:block; margin:0 auto 10px; }
+    a { color:#007BFF; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .oauth-images img { width:200px; margin:10px 0; cursor:pointer; }
   </style>
-  <!-- Hide Google key => We'll load from /js/autocomplete.js instead -->
 </head>
 <body>
 <div class="container">
@@ -37,57 +39,35 @@
     </label>
 
     <label>
-      <input type="checkbox" name="agreePolicy" required>
-      I have read and agree to the <a href="privacy.html" target="_blank">Privacy Policy</a>.
+      <input type="checkbox" name="agreePolicy" required> 
+      I agree to the <a href="privacy.html" target="_blank">Privacy Policy</a>.
     </label>
     <label>
-      <input type="checkbox" name="agreeTerms" required>
-      I have read and agree to the <a href="terms.html" target="_blank">User Terms & Agreement</a>.
+      <input type="checkbox" name="agreeTerms" required> 
+      I agree to the <a href="terms.html" target="_blank">User Terms & Agreement</a>.
     </label>
 
     <button type="submit">Sign Up</button>
   </form>
 
   <hr>
-  <p>Or sign up using official buttons below:</p>
-
-  <!-- Google GSI code snippet -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <div id="g_id_onload"
-       data-client_id="YOUR_GOOGLE_CLIENT_ID"
-       data-login_uri="https://YOUR_DOMAIN.com/google-signin-callback"
-       data-auto_prompt="false">
+  <p style="text-align:center;">Or sign up with:</p>
+  <div class="oauth-images" style="text-align:center;">
+    <a href="/auth/google">
+      <img src="../images/googleSignUp.png" alt="Sign up with Google">
+    </a>
+    <br>
+    <a href="/auth/apple">
+      <img src="../images/appleSignUp.png" alt="Sign up with Apple">
+    </a>
   </div>
-  <div class="g_id_signin"
-       data-type="standard"
-       data-size="large"
-       data-theme="outline"
-       data-text="continue_with"
-       data-shape="rectangular"
-       data-logo_alignment="left">
-  </div>
-
-  <hr>
-  <!-- Apple Sign In snippet -->
-  <script src="https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js"></script>
-  <div id="appleid-signin" data-color="black" data-border="true" data-type="sign in"></div>
-  <script>
-  document.addEventListener('DOMContentLoaded', function(){
-    AppleID.auth.init({
-      clientId : 'com.example.appid',
-      scope : 'name email',
-      redirectURI: 'https://YOUR_DOMAIN.com/apple-signin-callback',
-      usePopup: true
-    });
-  });
-  </script>
 
   <p style="text-align:center; margin-top:20px;">
     Already have an account? <a href="login.html">Log in</a>
   </p>
 </div>
 
-<!-- Our address autocomplete script -->
+<!-- Hide API key for address autocomplete -->
 <script src="/js/autocomplete.js"></script>
 </body>
 </html>
