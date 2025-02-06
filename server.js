@@ -46,12 +46,6 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Added for test START
-app.use("/auth", authRoutes); // ✅ Mount the auth routes
-
-export default app;
-// Added for test END
-
 // Serve static
 app.use(express.static(__dirname));
 
