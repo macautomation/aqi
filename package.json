@@ -3,8 +3,7 @@
   "version": "4.1.0",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "postinstall": "PUPPETEER_CACHE_DIR=.cache/puppeteer npx puppeteer install"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
