@@ -2,7 +2,8 @@
 import express from 'express';
 import session from 'express-session';
 import pgSession from 'connect-pg-simple';
-import { Pool } from 'pg';
+import pkg from 'pg';  // <-- Use the default import for CommonJS compatibility
+const { Pool } = pkg;
 import passport from 'passport';
 import bodyParser from 'body-parser';
 import bcrypt from 'bcrypt';
@@ -391,9 +392,6 @@ cron.schedule('0 8 * * *', async () => {
   }
 });
 
-/**
- * Ensure the user is authenticated
- */
 function ensureAuth(req, res, next) {
   if (req.isAuthenticated()) return next();
   res.redirect('/html/login.html');
