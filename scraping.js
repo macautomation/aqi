@@ -7,7 +7,7 @@ export async function scrapeFireAirnow(url) {
   try {
     browser = await puppeteer.launch({
       headless: 'new',
-      executablePath: await chromium.executablePath,
+      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -46,7 +46,7 @@ export async function scrapeXappp(lat, lon) {
   try {
     browser = await puppeteer.launch({
       headless: 'new',
-      executablePath: await chromium.executablePath,
+      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -81,7 +81,7 @@ export async function scrapeArcgis(lat, lon) {
   try {
     browser = await puppeteer.launch({
       headless: 'new',
-      executablePath: await chromium.executablePath,
+      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
