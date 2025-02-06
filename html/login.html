@@ -3,21 +3,22 @@
 <head>
   <title>Login</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background: #f8f8f8; }
+    body { font-family: Arial, sans-serif; margin:20px; background: #f8f8f8; }
     .container { max-width: 400px; margin: 0 auto; padding: 20px; background: #fff; border-radius: 4px; }
     h1 { text-align: center; }
     label { display: block; margin-top: 10px; }
-    input[type="text"],
     input[type="email"],
     input[type="password"] { width: 100%; padding: 8px; margin-top: 5px; }
     button { margin-top: 15px; padding: 10px; width: 100%; cursor: pointer; }
     .oauth-images img { width: 200px; margin: 5px 0; cursor: pointer; }
     .logo { width: 150px; display: block; margin: 0 auto 10px; }
+    a { color:#007BFF; text-decoration:none; }
+    a:hover { text-decoration:underline; }
   </style>
 </head>
 <body>
   <div class="container">
-    <img src="/images/logo.png" alt="AQI Updates" class="logo">
+    <img src="../images/logo.png" alt="AQI Updates" class="logo">
 
     <h1>Log In</h1>
     <form method="post" action="/api/login">
@@ -33,14 +34,18 @@
     <div style="text-align:center; margin: 15px 0;">
       <p>Or log in with:</p>
       <div class="oauth-images">
-        <a href="/auth/google"><img src="/images/googleSignUp.png" alt="Login with Google"></a>
-        <a href="/auth/apple"><img src="/images/appleSignUp.png" alt="Login with Apple"></a>
+        <a href="/auth/google">
+          <img src="../images/googleSignUp.png" alt="Login with Google">
+        </a>
+        <a href="/auth/apple">
+          <img src="../images/appleSignUp.png" alt="Login with Apple">
+        </a>
       </div>
     </div>
 
     <p style="text-align:center;">
-      <a href="forgot.html">Forgot Password?</a> |
-      <a href="signup.html">Create an account</a>
+      <a href="forgot.html">Forgot Password?</a> | 
+      <a href="signup.html">Create account</a>
     </p>
   </div>
 </body>
