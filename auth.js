@@ -6,12 +6,45 @@ import AppleStrategy from 'passport-apple';
 import bcrypt from 'bcrypt';
 import { query } from './db.js';
 
-// Added for test
-import app from "./server.js"; // Adjust the path based on your file structure
+// Added for test START
+import express from "express";
+import jwt from "jsonwebtoken";
+
+const router = express.Router();
+
+router.get('/debug/apple-jwt', (req, res) => {
+    try {
+        const teamID = process.env.APPLE_TEAM_ID;
+        const keyID = process.env.APPLE_KEY_ID;
+        const clientID = process.env.APPLE_CLIENT_ID;
+        const privateKey = process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, '\n');
+
+        const claims = {
+            iss: teamID,
+            iat: Math.floor(Date.now() / 1000),
+            exp: Math.floor(Date.now() / 1000) + 86400 * 180, // 6 months
+            aud: "https://appleid.apple.com",
+            sub: clientID
+        };
+
+        const clientSecret = jwt.sign(claims, privateKey, {
+            algorithm: "ES256",
+            keyid: keyID,
+        });
+
+        res.json({ clientSecret });
+    } catch (err) {
+        console.error("JWT Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+export default router;
 
 app.get('/debug/apple-jwt', (req, res) => {
     res.json({ message: "JWT Debugging Route Works!" });
 });
+// Added for test END
 
 /**
  * Local Strategy
@@ -104,34 +137,3 @@ passport.deserializeUser(async (id, done) => {
     done(err);
   }
 });
-
-// Test JWT
-import jwt from "jsonwebtoken";
-
-app.get('/debug/apple-jwt', (req, res) => {
-    try {
-        const teamID = process.env.APPLE_TEAM_ID;
-        const keyID = process.env.APPLE_KEY_ID;
-        const clientID = process.env.APPLE_CLIENT_ID;
-        const privateKey = process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, '\n');
-
-        const claims = {
-            iss: teamID,
-            iat: Math.floor(Date.now() / 1000),
-            exp: Math.floor(Date.now() / 1000) + 86400 * 180, // 6 months
-            aud: "https://appleid.apple.com",
-            sub: clientID
-        };
-
-        const clientSecret = jwt.sign(claims, privateKey, {
-            algorithm: "ES256",
-            keyid: keyID,
-        });
-
-        res.json({ clientSecret }); // Return the generated JWT
-    } catch (err) {
-        console.error("JWT Error:", err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
