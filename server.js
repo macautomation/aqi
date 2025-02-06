@@ -18,27 +18,6 @@ import { fetchOpenWeather, fetchAirNowAQI, labelAirNowAQI, getWindStatus } from 
 import { scrapeFireAirnow, scrapeXappp, scrapeArcgis } from './scraping.js';
 import { distanceMiles } from './utils.js';
 
-// Google Maps API
-app.get('/js/autocomplete.js', (req, res) => {
-  const key = process.env.GOOGLE_PLACES_KEY || ''; // or reuse process.env.GOOGLE_GEOCODE_KEY if same
-  // Return a small JS snippet that loads google maps with the key
-  const content = `
-    function loadGooglePlaces() {
-      var script = document.createElement('script');
-      script.src = "https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&callback=initAutocomplete";
-      document.head.appendChild(script);
-    }
-    function initAutocomplete() {
-      var input = document.getElementById('addressInput');
-      if (!input) return;
-      new google.maps.places.Autocomplete(input);
-    }
-    window.onload = loadGooglePlaces;
-  `;
-  res.setHeader('Content-Type', 'application/javascript');
-  res.send(content);
-});
-
 // SendGrid
 import sgMail from '@sendgrid/mail';
 sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
@@ -83,21 +62,15 @@ async function sendEmail(to, subject, text) {
   await sgMail.send(msg);
 }
 
-/* ========================================
-   Password & Account Helpers
-   ======================================== */
+// Password complexity checker
 function isPasswordComplex(password) {
-  // Example policy: >=8 chars, 1 digit, 1 letter, 1 special char
+  // Example policy: >=8 chars, must contain digit, letter, and special char
   if (password.length < 8) return false;
   if (!/[0-9]/.test(password)) return false;
   if (!/[A-Za-z]/.test(password)) return false;
   if (!/[^A-Za-z0-9]/.test(password)) return false;
   return true;
 }
-
-/* ========================================
-   Routes
-   ======================================== */
 
 // SIGNUP
 app.post('/api/signup', async (req, res) => {
@@ -126,16 +99,20 @@ app.post('/api/signup', async (req, res) => {
       }
     }
 
-    // Hash
+    // Hash password
     const hash = await bcrypt.hash(password, 10);
-    // Track manual request usage
-    // We'll store manualRequests in JSON for simplicity: { "count": 0, "resetAt": <timestamp> }
+    // Initialize manualRequests, etc.
     await query(`
       INSERT INTO users (email, password_hash, address, lat, lon, latest_report)
       VALUES ($1, $2, $3, $4, $5, $6)
     `, [email, hash, address, lat, lon, JSON.stringify({
       manualRequests: { count: 0, resetAt: null }
     })]);
+
+    // Confirmation email with link to dashboard
+    const dashLink = `${process.env.APP_URL || 'http://localhost:3000'}/html/dashboard.html`;
+    await sendEmail(email, 'Welcome to AQI Updates', 
+      `Thanks for signing up!\nYour dashboard is here:\n${dashLink}`);
 
     // redirect to login
     res.redirect('/html/login.html');
@@ -202,10 +179,8 @@ app.post('/api/reset', async (req, res) => {
 
 // DELETE ACCOUNT
 app.post('/api/delete-account', ensureAuth, async (req, res) => {
-  // Actually remove user from DB
   const userId = req.user.id;
   await query('DELETE FROM users WHERE id=$1', [userId]);
-  // logout
   req.logout(() => {
     res.redirect('/index.html');
   });
@@ -216,7 +191,7 @@ app.post('/api/donate-now', (req, res) => {
   res.redirect('https://donate.stripe.com/00g02da1bgwA5he5kk');
 });
 
-/* ================ OAUTH ROUTES ================ */
+// OAUTH
 app.get('/auth/google', passport.authenticate('google', { scope: ['email', 'profile'] }));
 app.get('/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/html/login.html' }),
@@ -229,7 +204,7 @@ app.post('/auth/apple/callback',
   (req, res) => res.redirect('/html/dashboard.html')
 );
 
-/* =============== DASHBOARD API =============== */
+// Dashboard: load user report
 app.get('/api/myReport', ensureAuth, async (req, res) => {
   const { rows } = await query('SELECT latest_report FROM users WHERE id=$1', [req.user.id]);
   if (!rows.length) return res.json({ error: 'No user found' });
@@ -237,7 +212,7 @@ app.get('/api/myReport', ensureAuth, async (req, res) => {
   res.json(JSON.parse(lr));
 });
 
-// Trigger immediate report (limited 2 times per 24 hours)
+// On-demand report
 app.post('/api/report-now', ensureAuth, async (req, res) => {
   try {
     const { rows } = await query('SELECT latest_report, lat, lon FROM users WHERE id=$1', [req.user.id]);
@@ -247,7 +222,6 @@ app.post('/api/report-now', ensureAuth, async (req, res) => {
     let lr = user.latest_report ? JSON.parse(user.latest_report) : {};
     let manReq = lr.manualRequests || { count: 0, resetAt: null };
 
-    // Check if we should reset count
     const now = Date.now();
     if (manReq.resetAt && now > manReq.resetAt) {
       manReq.count = 0;
@@ -256,16 +230,12 @@ app.post('/api/report-now', ensureAuth, async (req, res) => {
     if (manReq.count >= 2) {
       return res.status(429).json({ error: 'Max 2 manual updates in 24 hours reached.' });
     }
-
-    // If lat/lon missing => can't do a report
     if (!user.lat || !user.lon) {
       return res.status(400).json({ error: 'No lat/lon for user.' });
     }
 
-    // Update manualRequests
     manReq.count += 1;
     if (manReq.count === 1) {
-      // first time => set resetAt for 24 hours
       manReq.resetAt = now + (24 * 3600 * 1000);
     }
 
@@ -295,7 +265,6 @@ app.post('/api/report-now', ensureAuth, async (req, res) => {
     }
 
     const reportStr = lines.join('\n');
-    // Save
     lr.report = reportStr;
     lr.manualRequests = manReq;
 
@@ -307,7 +276,7 @@ app.post('/api/report-now', ensureAuth, async (req, res) => {
   }
 });
 
-/* =============== CRON (daily) =============== */
+// Daily CRON
 cron.schedule('0 8 * * *', async () => {
   console.log('[CRON] daily triggered');
   try {
@@ -346,10 +315,8 @@ cron.schedule('0 8 * * *', async () => {
       const reportStr = lines.join('\n');
       lr.report = reportStr;
 
-      // Save back
       await query('UPDATE users SET latest_report=$1 WHERE id=$2', [JSON.stringify(lr), u.id]);
 
-      // Email
       await sendEmail(u.email, 'Your Daily Air Update', reportStr);
       console.log(`Sent daily update to ${u.email}`);
     }
@@ -358,7 +325,6 @@ cron.schedule('0 8 * * *', async () => {
   }
 });
 
-// Ensure user is authenticated
 function ensureAuth(req, res, next) {
   if (req.isAuthenticated()) return next();
   res.redirect('/html/login.html');
