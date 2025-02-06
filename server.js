@@ -208,6 +208,13 @@ app.post('/api/login',
   }
 );
 
+// LIST
+
+app.get('/api/list-addresses', ensureAuth, async (req, res) => {
+  const { rows } = await query('SELECT id, address, lat, lon FROM user_addresses WHERE user_id=$1 ORDER BY id', [req.user.id]);
+  res.json(rows);
+});
+
 // FORGOT
 app.post('/api/forgot', async (req, res) => {
   const { email } = req.body;
