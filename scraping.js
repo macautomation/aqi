@@ -1,14 +1,17 @@
 // scraping.js
 import puppeteer from 'puppeteer-core';
+import chromium from 'chrome-aws-lambda';
 
 // (A) Fire AirNow
 export async function scrapeFireAirnow(url) {
   let browser;
   try {
     browser = await puppeteer.launch({
-      headless: 'new',
-      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
-      args: [
+      headless: true,
+      executablePath: await chromium.executablePath,
+      args: chromium.args, // Fix: Use chromium.args
+      defaultViewport: chromium.defaultViewport
+     /* args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
@@ -16,8 +19,7 @@ export async function scrapeFireAirnow(url) {
         '--disable-software-rasterizer',
         '--disable-web-security'
       ]
-      // Some platforms need extra flags:
-      // args: ['--no-sandbox','--disable-setuid-sandbox']
+    */
     });
     const page = await browser.newPage();
     await page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -45,9 +47,11 @@ export async function scrapeXappp(lat, lon) {
   let browser;
   try {
     browser = await puppeteer.launch({
-      headless: 'new',
-      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
-      args: [
+      headless: true,
+      executablePath: await chromium.executablePath,
+      args: chromium.args, // Fix: Use chromium.args
+      defaultViewport: chromium.defaultViewport
+     /* args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
@@ -55,6 +59,7 @@ export async function scrapeXappp(lat, lon) {
         '--disable-software-rasterizer',
         '--disable-web-security'
       ]
+    */
     });
     const page = await browser.newPage();
     await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil:'domcontentloaded' });
@@ -80,16 +85,19 @@ export async function scrapeArcgis(lat, lon) {
   let browser;
   try {
     browser = await puppeteer.launch({
-      headless: 'new',
-      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
-      args: [
+      headless: true,
+      executablePath: await chromium.executablePath,
+      args: chromium.args, // Fix: Use chromium.args
+      defaultViewport: chromium.defaultViewport
+     /* args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--disable-software-rasterizer',
         '--disable-web-security'
-      ] 
+      ]
+    */
     });
     const page = await browser.newPage();
     await page.goto('https://experience.arcgis.com/experience/6a6a058a177440fdac6be881d41d4c2c/', {
