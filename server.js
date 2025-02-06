@@ -22,6 +22,22 @@ import { distanceMiles } from './utils.js';
 import sgMail from '@sendgrid/mail';
 sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
 
+
+// Added for test START
+import authRoutes from "./auth.js"; // Import the router
+
+const app = express();
+
+// Use auth routes
+app.use("/auth", authRoutes);
+
+// Start the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+export default app;
+// Added for test END
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -391,6 +407,3 @@ app.listen(process.env.PORT||3000, async()=>{
   await initDB();
   console.log(`Server running on port ${process.env.PORT||3000}`);
 });
-
-//Added for test
-export default app;
