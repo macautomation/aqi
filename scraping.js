@@ -7,6 +7,14 @@ export async function scrapeFireAirnow(url) {
   try {
     browser = await puppeteer.launch({
       headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-web-security'
+      ]
       // Some platforms need extra flags:
       // args: ['--no-sandbox','--disable-setuid-sandbox']
     });
@@ -35,7 +43,17 @@ export async function scrapeFireAirnow(url) {
 export async function scrapeXappp(lat, lon) {
   let browser;
   try {
-    browser = await puppeteer.launch({ headless:'new' });
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-web-security'
+      ]
+    });
     const page = await browser.newPage();
     await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil:'domcontentloaded' });
     // minimal check
@@ -59,7 +77,17 @@ export async function scrapeXappp(lat, lon) {
 export async function scrapeArcgis(lat, lon) {
   let browser;
   try {
-    browser = await puppeteer.launch({ headless:'new' });
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-web-security'
+      ] 
+    });
     const page = await browser.newPage();
     await page.goto('https://experience.arcgis.com/experience/6a6a058a177440fdac6be881d41d4c2c/', {
       waitUntil:'domcontentloaded'
