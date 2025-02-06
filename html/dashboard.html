@@ -3,13 +3,13 @@
 <head>
   <title>Dashboard</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background: #f8f8f8; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; background: #fff; border-radius: 4px; }
+    body { font-family:Arial,sans-serif; margin:20px; background:#f8f8f8; }
+    .container { max-width:600px; margin:0 auto; padding:20px; background:#fff; border-radius:4px; }
     h1 { text-align:center; }
-    .logo { width: 150px; display: block; margin: 0 auto 10px; }
-    #reportArea { white-space: pre-wrap; background: #f0f0f0; padding: 10px; margin: 10px 0; }
-    .loadingGif { width: 50px; display: block; margin: 10px auto; }
-    .btn { padding: 10px; margin-top: 10px; cursor:pointer; }
+    .logo { width:150px; display:block; margin:0 auto 10px; }
+    #reportArea { white-space: pre-wrap; background:#f0f0f0; padding:10px; margin:10px 0; }
+    .loadingGif { width:50px; display:block; margin:10px auto; }
+    .btn { padding:10px; margin-top:10px; cursor:pointer; }
     a { color:#007BFF; text-decoration:none; }
     a:hover { text-decoration:underline; }
   </style>
@@ -20,103 +20,141 @@
 
   <h1>Your Dashboard</h1>
 
-  <div id="reportSection">
-    <p id="loadingMsg" style="text-align:center; display:none;">
-      <img src="../images/loading.gif" class="loadingGif" alt="Loading...">
-      <br>Generating your report...
-    </p>
-    <div id="reportArea">Loading your report...</div>
+  <div id="addressesSection">
+    <h2>Your Addresses</h2>
+    <div id="addressesList">
+      Loading...
+    </div>
+    <hr>
+    <h3>Add a new address (up to 3)</h3>
+    <form method="post" action="/api/add-address">
+      <input type="text" id="addAddressInput" name="address" placeholder="Enter address">
+      <button type="submit">Add Address</button>
+    </form>
   </div>
 
+  <hr>
+  <h3>Current Report</h3>
+  <p id="loadingMsg" style="text-align:center; display:none;">
+    <img src="../images/loading.gif" class="loadingGif" alt="Loading..."><br>
+    Generating your report...
+  </p>
+  <div id="reportArea">Loading your report...</div>
   <button class="btn" id="updateNowBtn">Update My Report Now</button>
   <p style="color:#999; font-size:14px;">
-    You can update your report a maximum of 2 times every 24 hours.
+    Max 2 manual updates in 24 hours.
   </p>
-
-  <p>Next hourly update in: <span id="hourlyCountdown"></span></p>
-  <p>Next daily update in: <span id="dailyCountdown"></span></p>
 
   <hr>
   <p>
-    <a href="/logout">Log Out</a> | 
+    <a href="/logout">Log Out</a> |
     <a href="deleteConfirm.html">Delete Account</a>
   </p>
 </div>
 
 <script>
+const addressesList = document.getElementById('addressesList');
 const reportArea = document.getElementById('reportArea');
 const loadingMsg = document.getElementById('loadingMsg');
 const updateBtn = document.getElementById('updateNowBtn');
 
-// load existing
-fetch('/api/myReport')
-  .then(r => r.json())
-  .then(data => {
-    if (data.error) {
-      reportArea.innerText = data.error;
-    } else if (!data.report) {
-      // no report => show loading
-      showLoading();
-      fetchNow();
-    } else {
-      reportArea.innerText = data.report;
-    }
-  })
-  .catch(e => { reportArea.innerText = 'Error: ' + e; });
-
-updateBtn.addEventListener('click', () => {
-  showLoading();
-  fetchNow();
-});
-
-function showLoading() {
-  loadingMsg.style.display = 'block';
-  reportArea.innerText = '';
-}
-function hideLoading() {
-  loadingMsg.style.display = 'none';
-}
-function fetchNow() {
-  fetch('/api/report-now', { method:'POST' })
-    .then(r => r.json())
+// Load addresses
+function loadAddresses() {
+  fetch('/api/myReport') // We'll also parse the 'No addresses' if error
+    .then(r=>r.json())
     .then(data => {
-      hideLoading();
-      if (data.error) {
-        reportArea.innerText = 'Error: ' + data.error;
+      if (data.error && data.error.includes('No addresses')) {
+        addressesList.innerHTML = "No addresses. Please add one above.";
+        reportArea.innerText = data.error; 
+        return;
+      }
+      // If we have addresses, let's fetch them from a new endpoint or parse from data
+      // Actually, we need a dedicated route to list addresses
+    })
+    .catch(e=>{
+      addressesList.innerText = 'Error: '+e;
+    });
+
+  // Let's make a separate fetch for addresses specifically
+  fetch('/api/list-addresses')
+    .then(r=>r.json())
+    .then(addrData=>{
+      if (!Array.isArray(addrData)) {
+        addressesList.innerText = "Error: " + JSON.stringify(addrData);
+        return;
+      }
+      if (!addrData.length) {
+        addressesList.innerHTML = "No addresses. Please add one above.";
       } else {
-        reportArea.innerText = data.report;
+        let html = '<ul>';
+        for (const ad of addrData) {
+          html += `<li>
+            ${ad.address} 
+            <form method="post" action="/api/delete-address" style="display:inline;">
+              <input type="hidden" name="addressId" value="${ad.id}">
+              <button type="submit" style="margin-left:10px;">Delete</button>
+            </form>
+          </li>`;
+        }
+        html += '</ul>';
+        addressesList.innerHTML = html;
       }
     })
-    .catch(e => {
+    .catch(e=> addressesList.innerText='Error: '+e);
+}
+
+// Load report
+function loadReport() {
+  fetch('/api/myReport')
+    .then(r=>r.json())
+    .then(data=>{
+      if (data.error) {
+        reportArea.innerText = "Error: " + data.error;
+      } else {
+        reportArea.innerText = data.report || 'No report.';
+      }
+    })
+    .catch(e=> reportArea.innerText='Error: '+e);
+}
+
+// Update now
+function updateNow() {
+  showLoading();
+  fetch('/api/report-now',{method:'POST'})
+    .then(r=>r.json())
+    .then(d=>{
       hideLoading();
-      reportArea.innerText = 'Error: ' + e;
+      if (d.error) {
+        reportArea.innerText='Error: '+d.error;
+      } else {
+        reportArea.innerText=d.report;
+      }
+    })
+    .catch(e=>{
+      hideLoading();
+      reportArea.innerText='Error: '+e;
     });
 }
 
-// countdown
-function updateCountdowns() {
-  const now = new Date();
-  const nextHour = new Date(now);
-  nextHour.setHours(now.getHours()+1, 0, 0, 0);
-  const hourlyDiff = nextHour - now;
-
-  const nextDaily = new Date(now);
-  nextDaily.setHours(8, 0, 0, 0);
-  if (nextDaily <= now) nextDaily.setDate(nextDaily.getDate()+1);
-  const dailyDiff = nextDaily - now;
-
-  document.getElementById('hourlyCountdown').innerText = formatMs(hourlyDiff);
-  document.getElementById('dailyCountdown').innerText = formatMs(dailyDiff);
+function showLoading() {
+  loadingMsg.style.display='block';
+  reportArea.innerText='';
 }
-function formatMs(ms) {
-  const s = Math.floor(ms/1000);
-  const hh = Math.floor(s/3600);
-  const mm = Math.floor((s%3600)/60);
-  const ss = s%60;
-  return `${hh}h ${mm}m ${ss}s`;
+function hideLoading() {
+  loadingMsg.style.display='none';
 }
-setInterval(updateCountdowns,1000);
-updateCountdowns();
+
+// Additional route: /api/list-addresses -> we must create in server
+</script>
+
+<script>
+updateBtn.addEventListener('click', ()=>{
+  updateNow();
+});
+
+// Load addresses and report on page load
+loadAddresses();
+loadReport();
 </script>
 </body>
 </html>
