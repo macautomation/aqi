@@ -29,6 +29,7 @@ export async function scrapeFireAirnow(url) {
 }
 
 // (B) xappp
+// (B) xappp
 export async function scrapeXappp(lat, lon) {
   let browser;
   try {
@@ -39,23 +40,28 @@ export async function scrapeXappp(lat, lon) {
     const page = await browser.newPage();
     await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil: 'domcontentloaded' });
 
-    // Wait for the station dropdown to appear (adjust the selector if needed)
+    // Wait for the station dropdown using the correct selector (#SelectList)
     let stationDropdown;
     try {
-      stationDropdown = await page.waitForSelector('#stationDropdown', { timeout: 10000 });
+      stationDropdown = await page.waitForSelector('#SelectList', { timeout: 10000 });
     } catch (e) {
-      console.log('[scrapeXappp] stationDropdown not found within 10 seconds.');
+      console.log('[scrapeXappp] station dropdown not found within 10 seconds.');
     }
     
     if (!stationDropdown) {
       // Log the page content to help debug the missing element
       const html = await page.content();
       console.log('[scrapeXappp] Page HTML:', html);
-      console.log('[scrapeXappp] no stationDropdown found');
+      console.log('[scrapeXappp] no station dropdown found');
       return null;
     }
 
-    // Replace the following with your actual scraping logic once the dropdown is available
+    // You can now interact with the dropdown.
+    // For example, retrieve its value or select an option if needed:
+    const selectedValue = await stationDropdown.evaluate(el => el.value);
+    console.log('[scrapeXappp] Selected value:', selectedValue);
+
+    // (Replace this with your real scraping logic as needed)
     return { station: 'Fake Station', aqiText: '42' };
   } catch (err) {
     console.error('[scrapeXappp] error:', err);
