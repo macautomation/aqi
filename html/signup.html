@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <title>Sign Up - AQI Updates</title>
   <style>
-    /* Basic styling – adjust as needed */
     body { font-family: Arial, sans-serif; margin: 20px; }
     .form-group { margin-bottom: 15px; }
     .error { color: red; font-size: 0.9em; }
@@ -31,7 +30,6 @@
       <span class="toggle-password" data-target="password2">&#128521;</span>
       <div id="passwordMatch" class="error"></div>
     </div>
-    <!-- Other fields, e.g. address and policy checkboxes -->
     <div class="form-group">
       <label for="address">Address:</label><br/>
       <input type="text" id="address" name="address" required />
@@ -48,14 +46,12 @@
   </form>
 
   <script>
-    // Password strength and matching
     const passwordInput = document.getElementById('password');
     const password2Input = document.getElementById('password2');
     const strengthDiv = document.getElementById('passwordStrength');
     const matchDiv = document.getElementById('passwordMatch');
 
     function evaluateStrength(password) {
-      // A simple evaluation: adjust as needed or plug in a library like zxcvbn
       if (password.length < 8) return { text: 'Too Short', color: 'red' };
       let score = 0;
       if (/[a-z]/.test(password)) score++;
@@ -85,7 +81,6 @@
     passwordInput.addEventListener('input', checkPasswordMatch);
     password2Input.addEventListener('input', checkPasswordMatch);
 
-    // Toggle password visibility
     document.querySelectorAll('.toggle-password').forEach(function(el) {
       el.addEventListener('click', function() {
         const targetId = el.getAttribute('data-target');
@@ -100,7 +95,6 @@
       });
     });
 
-    // Prevent form submission if passwords don't match
     document.getElementById('signupForm').addEventListener('submit', function(e) {
       if (passwordInput.value !== password2Input.value) {
         e.preventDefault();
