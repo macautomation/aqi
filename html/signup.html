@@ -1,25 +1,69 @@
 <!DOCTYPE html>
 <html>
 <head>
-
   <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' https://appleid.apple.com;">
-
   <title>Sign Up</title>
   <style>
-    body { font-family: Arial,sans-serif; margin:20px; background:#f8f8f8; }
-    .container { max-width:400px; margin:0 auto; padding:20px; background:#fff; border-radius:4px; }
-    h1 { text-align:center; }
-    label { display:block; margin-top:10px; }
+    body { 
+      font-family: Arial, sans-serif; 
+      margin: 20px; 
+      background: #f8f8f8; 
+    }
+    .container { 
+      max-width: 400px; 
+      margin: 0 auto; 
+      padding: 20px; 
+      background: #fff; 
+      border-radius: 4px; 
+    }
+    h1 { text-align: center; }
+    label { display: block; margin-top: 10px; }
     input[type="email"],
     input[type="password"],
     input[type="text"] {
-      width:100%; padding:8px; margin-top:5px;
+      width: 100%; 
+      padding: 8px; 
+      margin-top: 5px;
+      box-sizing: border-box;
     }
-    button { margin-top:15px; padding:10px; width:100%; cursor:pointer; }
-    .logo { width:150px; display:block; margin:0 auto 10px; }
-    a { color:#007BFF; text-decoration:none; }
-    a:hover { text-decoration:underline; }
-    .oauth-images img { width:200px; margin:10px 0; cursor:pointer; }
+    button { 
+      margin-top: 15px; 
+      padding: 10px; 
+      width: 100%; 
+      cursor: pointer; 
+    }
+    .logo { 
+      width: 150px; 
+      display: block; 
+      margin: 0 auto 10px; 
+    }
+    a { color: #007BFF; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .oauth-images img { 
+      width: 200px; 
+      margin: 10px 0; 
+      cursor: pointer; 
+    }
+    /* New styles for password strength indicator and toggle icon */
+    .strength {
+      font-weight: bold;
+      margin-top: 5px;
+    }
+    .match-error {
+      color: red;
+      font-size: 0.9em;
+      margin-top: 5px;
+    }
+    .password-wrapper {
+      position: relative;
+    }
+    .toggle-password {
+      cursor: pointer;
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
   </style>
 </head>
 <body>
@@ -27,15 +71,23 @@
   <img src="../images/logo.png" alt="AQI Updates" class="logo">
 
   <h1>Sign Up</h1>
-  <form method="post" action="/api/signup">
+  <form method="post" action="/api/signup" id="signupForm">
     <label>Email:
       <input type="email" name="email" required>
     </label>
     <label>Password:
-      <input type="password" name="password" required>
+      <div class="password-wrapper">
+        <input type="password" name="password" id="password" required>
+        <span class="toggle-password" data-target="password">&#128521;</span>
+      </div>
+      <div id="passwordStrength" class="strength"></div>
     </label>
     <label>Confirm Password:
-      <input type="password" name="password2" required>
+      <div class="password-wrapper">
+        <input type="password" name="password2" id="password2" required>
+        <span class="toggle-password" data-target="password2">&#128521;</span>
+      </div>
+      <div id="passwordMatch" class="match-error"></div>
     </label>
     <label>Address to report on (optional):
       <input type="text" id="addressInput" name="address">
@@ -47,15 +99,15 @@
     </label>
     <label>
       <input type="checkbox" name="agreeTerms" required>
-      I have read and agree to the <a href="terms.html" target="_blank">User Terms & Agreement</a>.
+      I have read and agree to the <a href="terms.html" target="_blank">User Terms &amp; Agreement</a>.
     </label>
 
     <button type="submit">Sign Up</button>
   </form>
 
   <hr>
-  <p style="text-align:center;">Or sign up with:</p>
-  <div class="oauth-images" style="text-align:center;">
+  <p style="text-align: center;">Or sign up with:</p>
+  <div class="oauth-images" style="text-align: center;">
     <a href="/auth/google">
       <img src="../images/googleSignUp.png" alt="Sign up with Google">
     </a>
@@ -65,12 +117,78 @@
     </a>
   </div>
 
-  <p style="text-align:center; margin-top:20px;">
+  <p style="text-align: center; margin-top: 20px;">
     Already have an account? <a href="login.html">Log in</a>
   </p>
 </div>
 
 <!-- Our address autocomplete -->
 <script src="/js/autocomplete.js"></script>
+<script>
+  // Get elements
+  const passwordInput = document.getElementById('password');
+  const password2Input = document.getElementById('password2');
+  const strengthDiv = document.getElementById('passwordStrength');
+  const matchDiv = document.getElementById('passwordMatch');
+  const signupForm = document.getElementById('signupForm');
+
+  // Function to evaluate password strength
+  function evaluateStrength(password) {
+    if (password.length < 8) {
+      return { text: 'Too Short', color: 'red' };
+    }
+    let score = 0;
+    if (/[a-z]/.test(password)) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
+    if (password.length > 12) score++;
+    if (score <= 2) return { text: 'Weak', color: 'orange' };
+    else if (score === 3 || score === 4) return { text: 'Medium', color: 'blue' };
+    else return { text: 'Strong', color: 'green' };
+  }
+
+  // Update strength indicator as user types
+  passwordInput.addEventListener('input', function() {
+    const result = evaluateStrength(passwordInput.value);
+    strengthDiv.textContent = result.text;
+    strengthDiv.style.color = result.color;
+  });
+
+  // Check if passwords match
+  function checkPasswordMatch() {
+    if (passwordInput.value !== password2Input.value) {
+      matchDiv.textContent = "Passwords do not match";
+    } else {
+      matchDiv.textContent = "";
+    }
+  }
+
+  passwordInput.addEventListener('input', checkPasswordMatch);
+  password2Input.addEventListener('input', checkPasswordMatch);
+
+  // Toggle password visibility when clicking the winky icon
+  document.querySelectorAll('.toggle-password').forEach(function(icon) {
+    icon.addEventListener('click', function() {
+      const targetId = icon.getAttribute('data-target');
+      const input = document.getElementById(targetId);
+      if (input.type === "password") {
+        input.type = "text";
+        icon.style.opacity = 0.5;
+      } else {
+        input.type = "password";
+        icon.style.opacity = 1;
+      }
+    });
+  });
+
+  // Prevent form submission if passwords don't match
+  signupForm.addEventListener('submit', function(e) {
+    if (passwordInput.value !== password2Input.value) {
+      e.preventDefault();
+      alert("Passwords do not match!");
+    }
+  });
+</script>
 </body>
 </html>
