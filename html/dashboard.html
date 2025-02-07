@@ -39,6 +39,7 @@
   </div>
 
   <script>
+    // Helper: convert degrees to cardinal direction
     function degreesToCardinal(deg) {
       const directions = ["North", "North-East", "East", "South-East", "South", "South-West", "West", "North-West"];
       deg = deg % 360;
@@ -46,6 +47,7 @@
       return directions[index];
     }
 
+    // Helper: determine AQI color (based on AirNow guidelines)
     function aqiColor(aqi) {
       if (aqi <= 50) return "green";
       if (aqi <= 100) return "yellow";
@@ -55,18 +57,20 @@
       return "maroon";
     }
 
+    // Fetch the stored report from the server
     fetch('/api/myReport')
       .then(response => response.json())
       .then(data => {
         const container = document.getElementById('reportContainer');
         if (!data.addresses || data.addresses.length === 0) {
-          container.innerHTML = "<p>No report data available. Please refresh or contact support.</p>";
+          container.innerHTML = "<p>No report data available. Please try again later.</p>";
           return;
         }
         data.addresses.forEach(addr => {
           const section = document.createElement('div');
           section.className = "address-section";
 
+          // Address header
           const header = document.createElement('h3');
           header.textContent = addr.address;
           section.appendChild(header);
@@ -78,6 +82,7 @@
           hourlyDiv.appendChild(hourlyHeader);
           const hourlyList = document.createElement('ul');
 
+          // Loop through each AQI source for hourly data
           ["AirNow", "Clarity", "PurpleAir", "SouthCoastAQMD"].forEach(source => {
             if (addr.hourly && addr.hourly[source]) {
               const li = document.createElement('li');
@@ -114,6 +119,7 @@
               `<span>${addr.hourly.fire.info}</span>`;
             hourlyList.appendChild(li);
           }
+          // Lead, Chlorine, Bromine readings
           ["lead", "chlorine", "bromine"].forEach(elem => {
             if (addr.hourly && addr.hourly[elem] !== undefined) {
               const li = document.createElement('li');
@@ -124,11 +130,12 @@
           hourlyDiv.appendChild(hourlyList);
           section.appendChild(hourlyDiv);
 
+          // Divider
           const divider = document.createElement('div');
           divider.className = "divider";
           section.appendChild(divider);
 
-          // Daily Data – similar structure
+          // 24 Hour Data
           const dailyDiv = document.createElement('div');
           const dailyHeader = document.createElement('h4');
           dailyHeader.textContent = "Last 24 Hour Data";
@@ -167,6 +174,7 @@
         document.getElementById('reportContainer').innerHTML = "<p>Error loading report.</p>";
       });
 
+    // Modal logic for fire distance selection
     document.addEventListener('click', function(e) {
       if (e.target && e.target.classList.contains('fire-distance')) {
         e.preventDefault();
@@ -179,7 +187,7 @@
     document.querySelectorAll('.distanceOption').forEach(function(btn) {
       btn.addEventListener('click', function() {
         const newDistance = btn.getAttribute('data-distance');
-        alert("New default distance set to " + newDistance + " miles (update this setting on the server as needed).");
+        alert("New default distance set to " + newDistance + " miles (update on the server as needed).");
         document.getElementById('fireModal').style.display = 'none';
       });
     });
