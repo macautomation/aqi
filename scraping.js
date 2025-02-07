@@ -1,3 +1,4 @@
+// scraping.js
 import { chromium } from 'playwright';
 
 // (A) Fire AirNow
@@ -10,14 +11,14 @@ export async function scrapeFireAirnow(url) {
     });
     const page = await browser.newPage();
     await page.goto(url, { waitUntil: 'domcontentloaded' });
-    
+
     const match = url.match(/#\d+\/([\d.-]+)\/([\d.-]+)/);
     if (!match) return { nearFire: false };
     const lat = parseFloat(match[1]);
     const lon = parseFloat(match[2]);
     const dist = Math.sqrt((lat - 34.05) ** 2 + (lon + 118.2) ** 2);
     const nearFire = dist < 0.7;
-    
+
     return { nearFire };
   } catch (err) {
     console.error('[scrapeFireAirnow] error:', err);
@@ -27,7 +28,7 @@ export async function scrapeFireAirnow(url) {
   }
 }
 
-// (B) xappp – updated to use locator instead of page.$x
+// (B) xappp
 export async function scrapeXappp(lat, lon) {
   let browser;
   try {
@@ -37,18 +38,15 @@ export async function scrapeXappp(lat, lon) {
     });
     const page = await browser.newPage();
     await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil: 'domcontentloaded' });
-    
-    // Use page.locator with an XPath selector
-    const dropdownLocator = page.locator('//select//option[contains(text(), "-- Select a Station --")]');
-    const count = await dropdownLocator.count();
-    if (count === 0) {
-      console.log('[scrapeXappp] no station dropdown option found');
+
+    const stationDropdown = await page.$('#stationDropdown');
+    if (!stationDropdown) {
+      console.log('[scrapeXappp] no stationDropdown found');
       return null;
     }
-    // Get the value of the select element
-    const selectHandle = await page.$('select');
-    const selectedValue = await selectHandle.evaluate(el => el.value);
-    return { station: "Default Station", aqiText: "42", selected: selectedValue };
+
+    // (Replace this with your real scraping logic as needed)
+    return { station: 'Fake Station', aqiText: '42' };
   } catch (err) {
     console.error('[scrapeXappp] error:', err);
     return null;
@@ -57,7 +55,7 @@ export async function scrapeXappp(lat, lon) {
   }
 }
 
-// (C) ArcGIS remains largely unchanged
+// (C) ArcGIS
 export async function scrapeArcgis(lat, lon) {
   let browser;
   try {
@@ -66,7 +64,11 @@ export async function scrapeArcgis(lat, lon) {
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
     const page = await browser.newPage();
-    await page.goto('https://experience.arcgis.com/experience/6a6a058a177440fdac6be881d41d4c2c/', { waitUntil: 'domcontentloaded' });
+    await page.goto('https://experience.arcgis.com/experience/6a6a058a177440fdac6be881d41d4c2c/', {
+      waitUntil: 'domcontentloaded'
+    });
+
+    // (Replace this with your real scraping logic as needed)
     return { note: 'ArcGIS loaded, lat=' + lat + ', lon=' + lon };
   } catch (err) {
     console.error('[scrapeArcgis] error:', err);
