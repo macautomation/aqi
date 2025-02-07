@@ -54,9 +54,7 @@
   </p>
   <div id="reportArea">Loading your report...</div>
   <button class="btn" id="updateNowBtn">Update My Report Now</button>
-  <p style="color:#999; font-size:14px;">
-    Max 2 manual updates in 24 hours.
-  </p>
+  <p style="color:#999; font-size:14px;">Max 2 manual updates in 24 hours.</p>
 
   <p>Next hourly update in: <span id="hourlyCountdown"></span></p>
   <p>Next daily update in: <span id="dailyCountdown"></span></p>
@@ -69,7 +67,7 @@
 </div>
 
 <script>
-// Helper function to fetch JSON with error handling
+// Fetch helper: fetch JSON with error handling
 async function fetchJSON(url, opts) {
   const resp = await fetch(url, opts);
   if (!resp.ok) {
@@ -128,7 +126,7 @@ async function loadReport() {
     if (data.error) {
       reportArea.innerText = 'Error: ' + data.error;
     } else {
-      // If station data exists and is structured as an array, render it as a table.
+      // If stationData exists and is an array, render a table.
       if (data.stationData && Array.isArray(data.stationData)) {
         let tableHtml = '<h4>Station Data</h4>';
         tableHtml += '<table class="station-table">';
@@ -148,10 +146,8 @@ async function loadReport() {
           tableHtml += '</tr>';
         });
         tableHtml += '</tbody></table>';
-        // Display station name and the table.
         reportArea.innerHTML = `<p><strong>Station:</strong> ${data.station || "None"}</p>` + tableHtml;
       } else {
-        // Fallback: if no stationData is provided, display the report text.
         reportArea.innerText = data.report || 'No report.';
       }
     }
@@ -169,7 +165,7 @@ async function updateNow() {
     if (data.error) {
       reportArea.innerText = 'Error: ' + data.error;
     } else {
-      // Reuse the logic from loadReport()
+      // Reuse the same table-rendering logic as in loadReport().
       if (data.stationData && Array.isArray(data.stationData)) {
         let tableHtml = '<h4>Station Data</h4>';
         tableHtml += '<table class="station-table">';
@@ -200,7 +196,7 @@ async function updateNow() {
   }
 }
 
-// Countdown timers for updates
+// Countdown timers for updates.
 function updateCountdowns() {
   const now = new Date();
   const nextHour = new Date(now);
@@ -227,7 +223,7 @@ updateCountdowns();
 
 updateBtn.addEventListener('click', updateNow);
 
-// Initialize
+// Initialize address list and report.
 loadAddresses();
 loadReport();
 </script>
