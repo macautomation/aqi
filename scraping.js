@@ -68,14 +68,6 @@ const breakpoints = {
     { concLow: 1250, concHigh: 1649, aqiLow: 301, aqiHigh: 400 },
     { concLow: 1650, concHigh: 2049, aqiLow: 401, aqiHigh: 500 }
   ],
-  "SO2": [
-    { concLow: 0, concHigh: 35, aqiLow: 0, aqiHigh: 50 },
-    { concLow: 36, concHigh: 75, aqiLow: 51, aqiHigh: 100 },
-    { concLow: 76, concHigh: 185, aqiLow: 101, aqiHigh: 150 },
-    { concLow: 186, concHigh: 304, aqiLow: 151, aqiHigh: 200 },
-    { concLow: 305, concHigh: 604, aqiLow: 201, aqiHigh: 300 },
-    { concLow: 605, concHigh: 1004, aqiLow: 301, aqiHigh: 500 }
-  ],
   "CO": [
     { concLow: 0.0, concHigh: 4.4, aqiLow: 0, aqiHigh: 50 },
     { concLow: 4.5, concHigh: 9.4, aqiLow: 51, aqiHigh: 100 },
@@ -117,12 +109,10 @@ export async function scrapeFireAirnow(url) {
 
 /**
  * (B) scrapeXappp
- * Scrapes the AQMD station page, extracts city names from the dropdown (#SelectList),
- * calculates the distance from the user's location to each city's center, and:
- * - If the closest city is within 20 miles, scrapes live pollutant data for the station,
- *   computes the AQI for each pollutant (CO, O3, NO2, PM10, PM2.5) using embedded breakpoints,
- *   and returns the station data as table data.
- * - Otherwise, returns a fixed message indicating no station is available.
+ * Scrapes the AQMD station page at https://xappp.aqmd.gov/aqdetail/ to determine the closest station
+ * (city) based on user latitude/longitude. If the closest city is within 20 miles, it scrapes live pollutant data
+ * for PM2.5, PM10, O₃, NO₂, and CO using full XPath selectors and computes the AQI for each pollutant using embedded breakpoints.
+ * (Wind data is scraped but not displayed in this table.)
  */
 export async function scrapeXappp(userLat, userLon) {
   let browser;
@@ -134,7 +124,7 @@ export async function scrapeXappp(userLat, userLon) {
     const page = await browser.newPage();
     await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil: 'domcontentloaded' });
 
-    // Wait for the dropdown element with id "SelectList"
+    // Wait for the dropdown element using the correct selector (#SelectList)
     let dropdown;
     try {
       dropdown = await page.waitForSelector('#SelectList', { timeout: 10000 });
@@ -147,8 +137,6 @@ export async function scrapeXappp(userLat, userLon) {
       console.log('[scrapeXappp] No station dropdown found');
       return null;
     }
-
-    // Extract city options from the dropdown, excluding the default placeholder.
     const cityOptions = await page.$$eval('#SelectList option', options =>
       options.map(o => o.textContent.trim()).filter(text => text && text !== '-- Select a Station --')
     );
@@ -205,34 +193,34 @@ export async function scrapeXappp(userLat, userLon) {
 
     // If the closest city is within 20 miles, scrape live pollutant data.
     if (closestCity && minDistance <= 20) {
-      // Scrape pollutant data from the page.
-      // Here, we assume that the pollutant data is in rows with class "pollutantRow"
-      // and that each row contains:
-      //  - A child element with class "parameter" for the pollutant name.
-      //  - A child element with class "reading" for the current reading.
-      //  - A child element with class "description" for a description of the parameter.
-      const pollutantData = await page.$$eval('.pollutantRow', rows => {
-        return rows.map(row => {
-          const parameter = row.querySelector('.parameter') ? row.querySelector('.parameter').innerText.trim() : "";
-          const readingText = row.querySelector('.reading') ? row.querySelector('.reading').innerText.trim() : "";
-          const reading = parseFloat(readingText);
-          const description = row.querySelector('.description') ? row.querySelector('.description').innerText.trim() : "";
-          return { parameter, reading, description };
-        });
-      });
+      // Use XPath selectors to extract live pollutant data.
+      // Adjust these XPath expressions based on the actual page structure.
+      const coReadingText = await page.locator('//label[contains(text(),"Parameter:") and contains(., "CO")]/following-sibling::span[contains(@class,"mtext")]').innerText();
+      const o3ReadingText = await page.locator('//label[contains(text(),"Parameter:") and contains(., "O3")]/following-sibling::span[contains(@class,"mtext")]').innerText();
+      const no2ReadingText = await page.locator('//label[contains(text(),"Parameter:") and contains(., "NO2")]/following-sibling::span[contains(@class,"mtext")]').innerText();
+      const pm10ReadingText = await page.locator('//label[contains(text(),"Parameter:") and contains(., "PM10")]/following-sibling::span[contains(@class,"mtext")]').innerText();
+      const pm25ReadingText = await page.locator('//label[contains(text(),"Parameter:") and contains(., "PM2.5")]/following-sibling::span[contains(@class,"mtext")]').innerText();
 
-      console.log('[scrapeXappp] Raw pollutant data:', pollutantData);
+      // Clean and convert readings to numbers.
+      const co = parseFloat(coReadingText.replace(/[^0-9.]/g, ''));
+      const o3 = parseFloat(o3ReadingText.replace(/[^0-9.]/g, ''));
+      const no2 = parseFloat(no2ReadingText.replace(/[^0-9.]/g, ''));
+      const pm10 = parseFloat(pm10ReadingText.replace(/[^0-9.]/g, ''));
+      const pm25 = parseFloat(pm25ReadingText.replace(/[^0-9.]/g, ''));
 
-      // Filter the pollutant data to keep only the parameters of interest.
-      const filteredData = pollutantData.filter(item =>
-        ["CO", "O3", "NO2", "PM10", "PM2.5"].includes(item.parameter)
-      );
-      console.log('[scrapeXappp] Filtered pollutant data:', filteredData);
+      // Build the pollutant data array for the desired parameters.
+      const pollutantData = [
+        { parameter: "PM2.5", reading: pm25, description: "Fine Particulate Matter (µg/m³)" },
+        { parameter: "PM10", reading: pm10, description: "Coarse Particulate Matter (µg/m³)" },
+        { parameter: "O3", reading: o3, description: "Ozone (ppm)" },
+        { parameter: "NO2", reading: no2, description: "Nitrogen Dioxide (ppm)" },
+        { parameter: "CO", reading: co, description: "Carbon Monoxide (ppm)" }
+      ];
 
-      // Build table data by computing the AQI for each pollutant.
-      const tableData = filteredData.map(item => {
+      // Compute AQI for each pollutant using the embedded logic.
+      const tableData = pollutantData.map(item => {
         const bp = breakpoints[item.parameter];
-        const aqi = bp ? calculateAQI(item.reading, bp) : "N/A";
+        const aqi = bp ? calculateAQI(item.reading, bp) : null;
         return {
           Parameter: item.parameter,
           "Current Reading": item.reading,
@@ -243,7 +231,7 @@ export async function scrapeXappp(userLat, userLon) {
 
       return { station: closestCity, stationData: tableData };
     } else {
-      // If no city is within 20 miles, return a fixed message.
+      // If no station is within 20 miles, return a fixed message.
       return { station: "South Coast AQMD: No station within 20 miles of this location.", stationData: null };
     }
   } catch (err) {
@@ -266,9 +254,7 @@ export async function scrapeArcgis(lat, lon) {
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
     const page = await browser.newPage();
-    await page.goto('https://experience.arcgis.com/experience/6a6a058a177440fdac6be881d41d4c2c/', {
-      waitUntil: 'domcontentloaded'
-    });
+    await page.goto('https://experience.arcgis.com/experience/6a6a058a177440fdac6be881d41d4c2c/', { waitUntil: 'domcontentloaded' });
     return { note: 'ArcGIS loaded, lat=' + lat + ', lon=' + lon };
   } catch (err) {
     console.error('[scrapeArcgis] error:', err);
