@@ -3,15 +3,30 @@
 <head>
   <title>Dashboard</title>
   <style>
-    body { font-family: Arial, sans-serif; margin:20px; background: #f8f8f8;}
-    .container { max-width:600px; margin:0 auto; background:#fff; padding:20px; border-radius:4px;}
+    body { font-family: Arial, sans-serif; margin:20px; background: #f8f8f8; }
+    .container { max-width:600px; margin:0 auto; background:#fff; padding:20px; border-radius:4px; }
     h1 { text-align:center; }
     .logo { width:150px; display:block; margin:0 auto 10px; }
     #addressesList ul { list-style:none; padding:0; }
     #addressesList li { margin-bottom:5px; }
-    #reportArea { white-space:pre-wrap; background:#f0f0f0; padding:10px; margin:10px 0; }
+    #reportArea { margin:10px 0; }
     .loadingGif { width:50px; display:block; margin:10px auto; }
     .btn { padding:10px; margin-top:10px; cursor:pointer; }
+    /* Table styles for station data */
+    table.station-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table.station-table th,
+    table.station-table td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+    }
+    table.station-table th {
+      background-color: #f0f0f0;
+    }
   </style>
 </head>
 <body>
@@ -54,122 +69,170 @@
 </div>
 
 <script>
-// a fetch helper that checks if response ok
+// Helper function to fetch JSON with error handling
 async function fetchJSON(url, opts) {
   const resp = await fetch(url, opts);
   if (!resp.ok) {
-    if (resp.status===401) {
+    if (resp.status === 401) {
       alert('Not authenticated, redirecting to login...');
-      window.location='login.html';
+      window.location = 'login.html';
       return null;
     }
-    let text=await resp.text();
+    let text = await resp.text();
     throw new Error(`HTTP ${resp.status} - ${text}`);
   }
   return resp.json();
 }
 
-const addressesList=document.getElementById('addressesList');
-const reportArea=document.getElementById('reportArea');
-const loadingMsg=document.getElementById('loadingMsg');
-const updateBtn=document.getElementById('updateNowBtn');
+const addressesList = document.getElementById('addressesList');
+const reportArea = document.getElementById('reportArea');
+const loadingMsg = document.getElementById('loadingMsg');
+const updateBtn = document.getElementById('updateNowBtn');
 
 function showLoading() {
-  loadingMsg.style.display='block';
-  reportArea.innerText='';
+  loadingMsg.style.display = 'block';
+  reportArea.innerHTML = '';
 }
 function hideLoading() {
-  loadingMsg.style.display='none';
+  loadingMsg.style.display = 'none';
 }
 
 async function loadAddresses() {
   try {
-    const arr=await fetchJSON('/api/list-addresses');
-    if(!arr) return; 
-    if(!arr.length) {
-      addressesList.innerText='No addresses. Please add one above.';
+    const arr = await fetchJSON('/api/list-addresses');
+    if (!arr) return;
+    if (!arr.length) {
+      addressesList.innerText = 'No addresses. Please add one above.';
     } else {
-      let html='<ul>';
-      for(const a of arr){
-        html+=`<li>${a.address} ${a.lat&&a.lon?'(lat/lon ok)':'(No lat/lon)'}
+      let html = '<ul>';
+      for (const a of arr) {
+        html += `<li>${a.address} ${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
           <form method="post" action="/api/delete-address" style="display:inline;">
             <input type="hidden" name="addressId" value="${a.id}">
             <button type="submit" style="margin-left:10px;">Delete</button>
           </form>
         </li>`;
       }
-      html+='</ul>';
-      addressesList.innerHTML=html;
+      html += '</ul>';
+      addressesList.innerHTML = html;
     }
-  } catch(e) {
-    addressesList.innerText='Error: '+e;
+  } catch (e) {
+    addressesList.innerText = 'Error: ' + e;
   }
 }
 
 async function loadReport() {
   try {
-    const data=await fetchJSON('/api/myReport');
-    if(!data)return;
-    if(data.error) {
-      reportArea.innerText='Error: '+data.error;
+    const data = await fetchJSON('/api/myReport');
+    if (!data) return;
+    if (data.error) {
+      reportArea.innerText = 'Error: ' + data.error;
     } else {
-      reportArea.innerText=data.report||'No report.';
+      // If station data exists and is structured as an array, render it as a table.
+      if (data.stationData && Array.isArray(data.stationData)) {
+        let tableHtml = '<h4>Station Data</h4>';
+        tableHtml += '<table class="station-table">';
+        tableHtml += '<thead><tr>';
+        tableHtml += '<th>Parameter</th>';
+        tableHtml += '<th>Current Reading (1-hour average)</th>';
+        tableHtml += '<th>Parameter Description</th>';
+        tableHtml += '<th>AQI</th>';
+        tableHtml += '</tr></thead>';
+        tableHtml += '<tbody>';
+        data.stationData.forEach(row => {
+          tableHtml += '<tr>';
+          tableHtml += `<td>${row.Parameter}</td>`;
+          tableHtml += `<td>${row["Current Reading"]}</td>`;
+          tableHtml += `<td>${row["Parameter Description"]}</td>`;
+          tableHtml += `<td>${row.AQI}</td>`;
+          tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table>';
+        // Display station name and the table.
+        reportArea.innerHTML = `<p><strong>Station:</strong> ${data.station || "None"}</p>` + tableHtml;
+      } else {
+        // Fallback: if no stationData is provided, display the report text.
+        reportArea.innerText = data.report || 'No report.';
+      }
     }
-  } catch(e){
-    reportArea.innerText='Error: '+e;
+  } catch (e) {
+    reportArea.innerText = 'Error: ' + e;
   }
 }
 
 async function updateNow() {
   showLoading();
   try {
-    const data=await fetchJSON('/api/report-now',{method:'POST'});
+    const data = await fetchJSON('/api/report-now', { method: 'POST' });
     hideLoading();
-    if(!data)return;
-    if(data.error){
-      reportArea.innerText='Error: '+data.error;
+    if (!data) return;
+    if (data.error) {
+      reportArea.innerText = 'Error: ' + data.error;
     } else {
-      reportArea.innerText=data.report;
+      // Reuse the logic from loadReport()
+      if (data.stationData && Array.isArray(data.stationData)) {
+        let tableHtml = '<h4>Station Data</h4>';
+        tableHtml += '<table class="station-table">';
+        tableHtml += '<thead><tr>';
+        tableHtml += '<th>Parameter</th>';
+        tableHtml += '<th>Current Reading (1-hour average)</th>';
+        tableHtml += '<th>Parameter Description</th>';
+        tableHtml += '<th>AQI</th>';
+        tableHtml += '</tr></thead>';
+        tableHtml += '<tbody>';
+        data.stationData.forEach(row => {
+          tableHtml += '<tr>';
+          tableHtml += `<td>${row.Parameter}</td>`;
+          tableHtml += `<td>${row["Current Reading"]}</td>`;
+          tableHtml += `<td>${row["Parameter Description"]}</td>`;
+          tableHtml += `<td>${row.AQI}</td>`;
+          tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table>';
+        reportArea.innerHTML = `<p><strong>Station:</strong> ${data.station || "None"}</p>` + tableHtml;
+      } else {
+        reportArea.innerText = data.report;
+      }
     }
-  } catch(e) {
+  } catch (e) {
     hideLoading();
-    reportArea.innerText='Error: '+e;
+    reportArea.innerText = 'Error: ' + e;
   }
 }
 
-// countdown
-function updateCountdowns(){
-  const now=new Date();
-  const nextHour=new Date(now);
-  nextHour.setHours(now.getHours()+1,0,0,0);
-  const hourlyMs=nextHour-now;
+// Countdown timers for updates
+function updateCountdowns() {
+  const now = new Date();
+  const nextHour = new Date(now);
+  nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+  const hourlyMs = nextHour - now;
 
-  const nextDaily=new Date(now);
-  nextDaily.setHours(8,0,0,0);
-  if(nextDaily<=now) nextDaily.setDate(nextDaily.getDate()+1);
-  const dailyMs=nextDaily-now;
+  const nextDaily = new Date(now);
+  nextDaily.setHours(8, 0, 0, 0);
+  if (nextDaily <= now) nextDaily.setDate(nextDaily.getDate() + 1);
+  const dailyMs = nextDaily - now;
 
-  document.getElementById('hourlyCountdown').innerText=formatMs(hourlyMs);
-  document.getElementById('dailyCountdown').innerText=formatMs(dailyMs);
+  document.getElementById('hourlyCountdown').innerText = formatMs(hourlyMs);
+  document.getElementById('dailyCountdown').innerText = formatMs(dailyMs);
 }
-function formatMs(ms){
-  const s=Math.floor(ms/1000);
-  const hh=Math.floor(s/3600);
-  const mm=Math.floor((s%3600)/60);
-  const ss=s%60;
+function formatMs(ms) {
+  const s = Math.floor(ms / 1000);
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
   return `${hh}h ${mm}m ${ss}s`;
 }
-setInterval(updateCountdowns,1000);
+setInterval(updateCountdowns, 1000);
 updateCountdowns();
 
 updateBtn.addEventListener('click', updateNow);
 
-// init
+// Initialize
 loadAddresses();
 loadReport();
 </script>
 
-<!-- Load the same /js/autocomplete.js so the new address input has autocomplete too -->
+<!-- Load autocomplete for the address input -->
 <script src="/js/autocomplete.js"></script>
 
 </body>
