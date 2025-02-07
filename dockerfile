@@ -2,11 +2,7 @@
 FROM node:20-bookworm-slim
 
 # Install required OS dependencies for Playwright.
-# We install:
-#  - libgtk-4-1 and libgraphene-1.0-0 for UI rendering support
-#  - gstreamer1.0-gl and gstreamer1.0-plugins-base for GStreamer functionality
-#  - libavif-dev instead of libavif10 (to work around the package-not-found issue)
-#  - libenchant-2-2, libsecret-1-0, and libgles2-mesa as additional dependencies
+# This includes both our initial set and the additional dependencies recommended by Playwright.
 RUN apt-get update && apt-get install -y \
     libgtk-4-1 \
     libgraphene-1.0-0 \
@@ -16,12 +12,19 @@ RUN apt-get update && apt-get install -y \
     libenchant-2-2 \
     libsecret-1-0 \
     libgles2-mesa \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libxcomposite1 \
+    libasound2 \
+    libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory inside the container
 WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json (if available) first for caching
+# Copy package files for caching
 COPY package*.json ./
 
 # Install Node.js dependencies
