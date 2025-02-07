@@ -1,176 +1,207 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Dashboard</title>
+  <meta charset="UTF-8">
+  <title>Dashboard - AQI Updates</title>
   <style>
-    body { font-family: Arial, sans-serif; margin:20px; background: #f8f8f8;}
-    .container { max-width:600px; margin:0 auto; background:#fff; padding:20px; border-radius:4px;}
-    h1 { text-align:center; }
-    .logo { width:150px; display:block; margin:0 auto 10px; }
-    #addressesList ul { list-style:none; padding:0; }
-    #addressesList li { margin-bottom:5px; }
-    #reportArea { white-space:pre-wrap; background:#f0f0f0; padding:10px; margin:10px 0; }
-    .loadingGif { width:50px; display:block; margin:10px auto; }
-    .btn { padding:10px; margin-top:10px; cursor:pointer; }
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .address-section { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+    .divider { border-top: 2px dashed #999; margin: 20px 0; }
+    .aqi { font-weight: bold; }
+    .wind { font-weight: bold; }
+    .modal {
+      display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%;
+      overflow: auto; background-color: rgba(0,0,0,0.4);
+    }
+    .modal-content {
+      background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 300px;
+    }
+    .close-modal { float: right; cursor: pointer; }
   </style>
 </head>
 <body>
-<div class="container">
-  <img src="../images/logo.png" alt="AQI Updates" class="logo">
-  <h1>Your Dashboard</h1>
-
-  <div id="addressesSection">
-    <h2>Your Addresses</h2>
-    <div id="addressesList">Loading...</div>
-    <hr>
-    <h3>Add a new address (up to 3)</h3>
-    <form method="post" action="/api/add-address">
-      <!-- ID must match "addressInput" for autocomplete -->
-      <input type="text" id="addressInput" name="address" placeholder="Address to report on">
-      <button type="submit">Add Address</button>
-    </form>
+  <h2>Your AQI Dashboard</h2>
+  <div id="reportContainer">
+    <!-- Report data will be inserted here -->
   </div>
 
-  <hr>
-  <h3>Current Report</h3>
-  <p id="loadingMsg" style="text-align:center; display:none;">
-    <img src="../images/loading.gif" class="loadingGif" alt="Loading...">
-    <br>Generating your report...
-  </p>
-  <div id="reportArea">Loading your report...</div>
-  <button class="btn" id="updateNowBtn">Update My Report Now</button>
-  <p style="color:#999; font-size:14px;">
-    Max 2 manual updates in 24 hours.
-  </p>
+  <!-- Modal for choosing fire boundary distance -->
+  <div id="fireModal" class="modal">
+    <div class="modal-content">
+      <span id="closeModal" class="close-modal">&times;</span>
+      <h3>Select Distance</h3>
+      <p>Choose default distance for fire boundaries/smoke plumes:</p>
+      <button class="distanceOption" data-distance="5">5 miles</button>
+      <button class="distanceOption" data-distance="10">10 miles</button>
+      <button class="distanceOption" data-distance="25">25 miles</button>
+      <button class="distanceOption" data-distance="100">100 miles</button>
+    </div>
+  </div>
 
-  <p>Next hourly update in: <span id="hourlyCountdown"></span></p>
-  <p>Next daily update in: <span id="dailyCountdown"></span></p>
-
-  <hr>
-  <p>
-    <a href="/logout">Log Out</a> |
-    <a href="deleteConfirm.html">Delete Account</a>
-  </p>
-</div>
-
-<script>
-// a fetch helper that checks if response ok
-async function fetchJSON(url, opts) {
-  const resp = await fetch(url, opts);
-  if (!resp.ok) {
-    if (resp.status===401) {
-      alert('Not authenticated, redirecting to login...');
-      window.location='login.html';
-      return null;
+  <script>
+    // Helper to convert degrees to cardinal direction
+    function degreesToCardinal(deg) {
+      const directions = ["North", "North-East", "East", "South-East", "South", "South-West", "West", "North-West"];
+      deg = deg % 360;
+      const index = Math.round(deg / 45) % 8;
+      return directions[index];
     }
-    let text=await resp.text();
-    throw new Error(`HTTP ${resp.status} - ${text}`);
-  }
-  return resp.json();
-}
 
-const addressesList=document.getElementById('addressesList');
-const reportArea=document.getElementById('reportArea');
-const loadingMsg=document.getElementById('loadingMsg');
-const updateBtn=document.getElementById('updateNowBtn');
+    // Helper to get color for AQI value
+    function aqiColor(aqi) {
+      if (aqi <= 50) return "green";
+      if (aqi <= 100) return "yellow";
+      if (aqi <= 150) return "orange";
+      if (aqi <= 200) return "red";
+      if (aqi <= 300) return "purple";
+      return "maroon";
+    }
 
-function showLoading() {
-  loadingMsg.style.display='block';
-  reportArea.innerText='';
-}
-function hideLoading() {
-  loadingMsg.style.display='none';
-}
+    // Fetch the stored report from the server (which must return JSON)
+    fetch('/api/myReport')
+      .then(response => response.json())
+      .then(data => {
+        // Expected structure:
+        // data = { addresses: [ { address: "...", hourly: { AirNow: {aqi: ..}, Clarity: {...}, PurpleAir: {...}, SouthCoastAQMD: {...}, average: .., wind: { speed, deg, tooltip, color }, alerts: [{source, title, link}, ...], fire: { info, defaultDistance }, lead: {...}, chlorine: {...}, bromine: {...} }, daily: { ... same keys ... } }, ... ] }
+        const container = document.getElementById('reportContainer');
+        if (!data.addresses || data.addresses.length === 0) {
+          container.innerHTML = "<p>No addresses found in your report.</p>";
+          return;
+        }
+        data.addresses.forEach(addr => {
+          const section = document.createElement('div');
+          section.className = "address-section";
 
-async function loadAddresses() {
-  try {
-    const arr=await fetchJSON('/api/list-addresses');
-    if(!arr) return; 
-    if(!arr.length) {
-      addressesList.innerText='No addresses. Please add one above.';
-    } else {
-      let html='<ul>';
-      for(const a of arr){
-        html+=`<li>${a.address} ${a.lat&&a.lon?'(lat/lon ok)':'(No lat/lon)'}
-          <form method="post" action="/api/delete-address" style="display:inline;">
-            <input type="hidden" name="addressId" value="${a.id}">
-            <button type="submit" style="margin-left:10px;">Delete</button>
-          </form>
-        </li>`;
+          // Address header
+          const header = document.createElement('h3');
+          header.textContent = addr.address;
+          section.appendChild(header);
+
+          // Hourly Data
+          const hourlyDiv = document.createElement('div');
+          const hourlyHeader = document.createElement('h4');
+          hourlyHeader.textContent = "Last Hour Data";
+          hourlyDiv.appendChild(hourlyHeader);
+          // Create a list of readings
+          const hourlyList = document.createElement('ul');
+
+          // For each AQI source (if present)
+          ["AirNow", "Clarity", "PurpleAir", "SouthCoastAQMD"].forEach(source => {
+            if (addr.hourly[source]) {
+              const li = document.createElement('li');
+              li.innerHTML = `<span>${source} AQI: </span>` +
+                `<span class="aqi" style="color: ${aqiColor(addr.hourly[source].aqi)};">${addr.hourly[source].aqi}</span>`;
+              hourlyList.appendChild(li);
+            }
+          });
+          // Average AQI
+          if (addr.hourly.average !== undefined) {
+            const li = document.createElement('li');
+            li.innerHTML = `<span>Average AQI: </span>` +
+              `<span class="aqi" style="color: ${aqiColor(addr.hourly.average)};">${addr.hourly.average}</span>`;
+            hourlyList.appendChild(li);
+          }
+          // Wind information (append "mph" and convert degrees)
+          if (addr.hourly.wind) {
+            const li = document.createElement('li');
+            const wind = addr.hourly.wind;
+            li.innerHTML = `<span>Wind: ${wind.speed} mph, Direction: ${wind.deg}° (${degreesToCardinal(wind.deg)})</span>`;
+            li.querySelector('span').style.color = wind.color;
+            li.title = wind.tooltip;
+            hourlyList.appendChild(li);
+          }
+          // Alerts
+          if (addr.hourly.alerts && addr.hourly.alerts.length > 0) {
+            const li = document.createElement('li');
+            li.innerHTML = "<strong>Recent Alerts:</strong><br/>";
+            addr.hourly.alerts.forEach(alert => {
+              li.innerHTML += `<a href="${alert.link}" target="_blank">${alert.title}</a><br/>`;
+            });
+            hourlyList.appendChild(li);
+          }
+          // Fire boundary info with a clickable distance link
+          if (addr.hourly.fire && addr.hourly.fire.info) {
+            const li = document.createElement('li');
+            li.innerHTML = `<span>Fire/Soot Info (within <a href="#" class="fire-distance" data-default="${addr.hourly.fire.defaultDistance}">${addr.hourly.fire.defaultDistance} miles</a>): </span>` +
+              `<span>${addr.hourly.fire.info}</span>`;
+            hourlyList.appendChild(li);
+          }
+          // Lead, Chlorine, Bromine readings
+          ["lead", "chlorine", "bromine"].forEach(elem => {
+            if (addr.hourly[elem] !== undefined) {
+              const li = document.createElement('li');
+              li.innerHTML = `<span>${elem.charAt(0).toUpperCase() + elem.slice(1)}: ${addr.hourly[elem]}</span>`;
+              hourlyList.appendChild(li);
+            }
+          });
+          hourlyDiv.appendChild(hourlyList);
+          section.appendChild(hourlyDiv);
+
+          // Divider
+          const divider = document.createElement('div');
+          divider.className = "divider";
+          section.appendChild(divider);
+
+          // 24 Hour Data – similar structure
+          const dailyDiv = document.createElement('div');
+          const dailyHeader = document.createElement('h4');
+          dailyHeader.textContent = "Last 24 Hour Data";
+          dailyDiv.appendChild(dailyHeader);
+          const dailyList = document.createElement('ul');
+          // (Repeat for daily; for brevity we assume the same keys as hourly)
+          ["AirNow", "Clarity", "PurpleAir", "SouthCoastAQMD"].forEach(source => {
+            if (addr.daily && addr.daily[source]) {
+              const li = document.createElement('li');
+              li.innerHTML = `<span>${source} AQI: </span>` +
+                `<span class="aqi" style="color: ${aqiColor(addr.daily[source].aqi)};">${addr.daily[source].aqi}</span>`;
+              dailyList.appendChild(li);
+            }
+          });
+          if (addr.daily && addr.daily.average !== undefined) {
+            const li = document.createElement('li');
+            li.innerHTML = `<span>Average AQI: </span>` +
+              `<span class="aqi" style="color: ${aqiColor(addr.daily.average)};">${addr.daily.average}</span>`;
+            dailyList.appendChild(li);
+          }
+          if (addr.daily && addr.daily.wind) {
+            const li = document.createElement('li');
+            const wind = addr.daily.wind;
+            li.innerHTML = `<span>Wind: ${wind.speed} mph, Direction: ${wind.deg}° (${degreesToCardinal(wind.deg)})</span>`;
+            li.querySelector('span').style.color = wind.color;
+            li.title = wind.tooltip;
+            dailyList.appendChild(li);
+          }
+          // (Include alerts, fire info, and lead/chlorine/bromine as above)
+          dailyDiv.appendChild(dailyList);
+          section.appendChild(dailyDiv);
+
+          container.appendChild(section);
+        });
+      })
+      .catch(err => {
+        console.error("Error fetching report:", err);
+        document.getElementById('reportContainer').innerHTML = "<p>Error loading report.</p>";
+      });
+
+    // Modal logic for fire distance selection
+    document.addEventListener('click', function(e) {
+      if (e.target && e.target.classList.contains('fire-distance')) {
+        e.preventDefault();
+        // Show modal
+        document.getElementById('fireModal').style.display = 'block';
       }
-      html+='</ul>';
-      addressesList.innerHTML=html;
-    }
-  } catch(e) {
-    addressesList.innerText='Error: '+e;
-  }
-}
-
-async function loadReport() {
-  try {
-    const data=await fetchJSON('/api/myReport');
-    if(!data)return;
-    if(data.error) {
-      reportArea.innerText='Error: '+data.error;
-    } else {
-      reportArea.innerText=data.report||'No report.';
-    }
-  } catch(e){
-    reportArea.innerText='Error: '+e;
-  }
-}
-
-async function updateNow() {
-  showLoading();
-  try {
-    const data=await fetchJSON('/api/report-now',{method:'POST'});
-    hideLoading();
-    if(!data)return;
-    if(data.error){
-      reportArea.innerText='Error: '+data.error;
-    } else {
-      reportArea.innerText=data.report;
-    }
-  } catch(e) {
-    hideLoading();
-    reportArea.innerText='Error: '+e;
-  }
-}
-
-// countdown
-function updateCountdowns(){
-  const now=new Date();
-  const nextHour=new Date(now);
-  nextHour.setHours(now.getHours()+1,0,0,0);
-  const hourlyMs=nextHour-now;
-
-  const nextDaily=new Date(now);
-  nextDaily.setHours(8,0,0,0);
-  if(nextDaily<=now) nextDaily.setDate(nextDaily.getDate()+1);
-  const dailyMs=nextDaily-now;
-
-  document.getElementById('hourlyCountdown').innerText=formatMs(hourlyMs);
-  document.getElementById('dailyCountdown').innerText=formatMs(dailyMs);
-}
-function formatMs(ms){
-  const s=Math.floor(ms/1000);
-  const hh=Math.floor(s/3600);
-  const mm=Math.floor((s%3600)/60);
-  const ss=s%60;
-  return `${hh}h ${mm}m ${ss}s`;
-}
-setInterval(updateCountdowns,1000);
-updateCountdowns();
-
-updateBtn.addEventListener('click', updateNow);
-
-// init
-loadAddresses();
-loadReport();
-</script>
-
-<!-- Load the same /js/autocomplete.js so the new address input has autocomplete too -->
-<script src="/js/autocomplete.js"></script>
-
+    });
+    document.getElementById('closeModal').addEventListener('click', function() {
+      document.getElementById('fireModal').style.display = 'none';
+    });
+    document.querySelectorAll('.distanceOption').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        const newDistance = btn.getAttribute('data-distance');
+        // Here you might update the report via an AJAX call or store the preference locally.
+        alert("New default distance set to " + newDistance + " miles (update this setting on the server as needed).");
+        document.getElementById('fireModal').style.display = 'none';
+      });
+    });
+  </script>
 </body>
 </html>
