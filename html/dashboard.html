@@ -67,7 +67,7 @@
 </div>
 
 <script>
-// Fetch helper: fetch JSON with error handling
+// Fetch helper: fetch JSON with error handling.
 async function fetchJSON(url, opts) {
   const resp = await fetch(url, opts);
   if (!resp.ok) {
@@ -126,7 +126,6 @@ async function loadReport() {
     if (data.error) {
       reportArea.innerText = 'Error: ' + data.error;
     } else {
-      // If stationData exists and is an array, render a table.
       if (data.stationData && Array.isArray(data.stationData)) {
         let tableHtml = '<h4>Station Data</h4>';
         tableHtml += '<table class="station-table">';
@@ -165,7 +164,6 @@ async function updateNow() {
     if (data.error) {
       reportArea.innerText = 'Error: ' + data.error;
     } else {
-      // Reuse the same table-rendering logic as in loadReport().
       if (data.stationData && Array.isArray(data.stationData)) {
         let tableHtml = '<h4>Station Data</h4>';
         tableHtml += '<table class="station-table">';
