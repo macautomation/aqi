@@ -39,13 +39,23 @@ export async function scrapeXappp(lat, lon) {
     const page = await browser.newPage();
     await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil: 'domcontentloaded' });
 
-    const stationDropdown = await page.$('#stationDropdown');
+    // Wait for the station dropdown to appear (adjust the selector if needed)
+    let stationDropdown;
+    try {
+      stationDropdown = await page.waitForSelector('#stationDropdown', { timeout: 10000 });
+    } catch (e) {
+      console.log('[scrapeXappp] stationDropdown not found within 10 seconds.');
+    }
+    
     if (!stationDropdown) {
+      // Log the page content to help debug the missing element
+      const html = await page.content();
+      console.log('[scrapeXappp] Page HTML:', html);
       console.log('[scrapeXappp] no stationDropdown found');
       return null;
     }
 
-    // (Replace this with your real scraping logic as needed)
+    // Replace the following with your actual scraping logic once the dropdown is available
     return { station: 'Fake Station', aqiText: '42' };
   } catch (err) {
     console.error('[scrapeXappp] error:', err);
