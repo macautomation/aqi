@@ -108,11 +108,30 @@ export async function scrapeFireAirnow(url) {
 }
 
 /**
+ * Helper: Get pollutant data for a given pollutant symbol by index.
+ * Uses index-based XPath selectors.
+ * Assumes that the pollutant order on the page is fixed:
+ * 1: PM2.5, 2: PM10, 3: O3, 4: NO2, 5: CO.
+ */
+async function getPollutantData(page, pollutantSymbol, index) {
+  // XPath for current reading: we look for the div with "Current Reading" label in the col-md-2 block.
+  const readingXpath = `(//div[contains(@class, "col-md-2") and .//label[contains(text(),"Current Reading")]]//span[contains(@class,"mtext")])[${index}]`;
+  // XPath for parameter description: in the col-md-3 block.
+  const descriptionXpath = `(//div[contains(@class, "col-md-3") and .//label[contains(text(),"Parameter Description")]]//span[contains(@class,"mtext")])[${index}]`;
+  
+  const readingText = await page.locator(readingXpath).innerText({ timeout: 30000 });
+  const descriptionText = await page.locator(descriptionXpath).innerText({ timeout: 30000 });
+  const reading = parseFloat(readingText.replace(/[^0-9.]/g, ''));
+  return { reading, description: descriptionText.trim() };
+}
+
+/**
  * (B) scrapeXappp
  * Scrapes the AQMD station page at https://xappp.aqmd.gov/aqdetail/ to determine the closest station
- * (city) based on user latitude/longitude. If the closest city is within 20 miles, it scrapes live pollutant data
- * for PM2.5, PM10, O₃, NO₂, and CO using full XPath selectors and computes the AQI for each pollutant using embedded breakpoints.
- * (Wind data is scraped but not displayed in this table.)
+ * (city) based on user latitude/longitude.
+ * If the closest city is within 20 miles, it scrapes live pollutant data for PM2.5, PM10, O₃, NO₂, and CO
+ * using index-based XPath selectors and computes the AQI for each pollutant using embedded EPA breakpoints.
+ * (Wind data is scraped separately and not included in this table.)
  */
 export async function scrapeXappp(userLat, userLon) {
   let browser;
@@ -123,8 +142,8 @@ export async function scrapeXappp(userLat, userLon) {
     });
     const page = await browser.newPage();
     await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil: 'domcontentloaded' });
-
-    // Wait for the dropdown element using the correct selector (#SelectList)
+    
+    // Wait for the dropdown element (#SelectList) and extract city options.
     let dropdown;
     try {
       dropdown = await page.waitForSelector('#SelectList', { timeout: 10000 });
@@ -141,7 +160,7 @@ export async function scrapeXappp(userLat, userLon) {
       options.map(o => o.textContent.trim()).filter(text => text && text !== '-- Select a Station --')
     );
     console.log('[scrapeXappp] Found city options:', cityOptions);
-
+    
     // Mapping of city names to approximate center coordinates.
     const cityCenters = {
       "Anaheim": { lat: 33.8353, lon: -117.9145 },
@@ -173,8 +192,8 @@ export async function scrapeXappp(userLat, userLon) {
       "Temecula": { lat: 33.4936, lon: -117.1484 },
       "West Los Angeles": { lat: 34.032, lon: -118.451 }
     };
-
-    // Calculate the distance from the user's location to each city's center.
+    
+    // Determine the closest city based on user coordinates.
     let closestCity = null;
     let minDistance = Infinity;
     for (const city of cityOptions) {
@@ -190,34 +209,24 @@ export async function scrapeXappp(userLat, userLon) {
       }
     }
     console.log('[scrapeXappp] Closest city:', closestCity, 'Distance:', minDistance, 'miles');
-
+    
     // If the closest city is within 20 miles, scrape live pollutant data.
     if (closestCity && minDistance <= 20) {
-      // Use XPath selectors to extract live pollutant data.
-      // Adjust these XPath expressions based on the actual page structure.
-      const coReadingText = await page.locator('//label[contains(text(),"Parameter:") and contains(., "CO")]/following-sibling::span[contains(@class,"mtext")]').innerText();
-      const o3ReadingText = await page.locator('//label[contains(text(),"Parameter:") and contains(., "O3")]/following-sibling::span[contains(@class,"mtext")]').innerText();
-      const no2ReadingText = await page.locator('//label[contains(text(),"Parameter:") and contains(., "NO2")]/following-sibling::span[contains(@class,"mtext")]').innerText();
-      const pm10ReadingText = await page.locator('//label[contains(text(),"Parameter:") and contains(., "PM10")]/following-sibling::span[contains(@class,"mtext")]').innerText();
-      const pm25ReadingText = await page.locator('//label[contains(text(),"Parameter:") and contains(., "PM2.5")]/following-sibling::span[contains(@class,"mtext")]').innerText();
-
-      // Clean and convert readings to numbers.
-      const co = parseFloat(coReadingText.replace(/[^0-9.]/g, ''));
-      const o3 = parseFloat(o3ReadingText.replace(/[^0-9.]/g, ''));
-      const no2 = parseFloat(no2ReadingText.replace(/[^0-9.]/g, ''));
-      const pm10 = parseFloat(pm10ReadingText.replace(/[^0-9.]/g, ''));
-      const pm25 = parseFloat(pm25ReadingText.replace(/[^0-9.]/g, ''));
-
-      // Build the pollutant data array for the desired parameters.
-      const pollutantData = [
-        { parameter: "PM2.5", reading: pm25, description: "Fine Particulate Matter (µg/m³)" },
-        { parameter: "PM10", reading: pm10, description: "Coarse Particulate Matter (µg/m³)" },
-        { parameter: "O3", reading: o3, description: "Ozone (ppm)" },
-        { parameter: "NO2", reading: no2, description: "Nitrogen Dioxide (ppm)" },
-        { parameter: "CO", reading: co, description: "Carbon Monoxide (ppm)" }
-      ];
-
-      // Compute AQI for each pollutant using the embedded logic.
+      // Define the order of pollutants as they appear on the page.
+      const pollutantOrder = ["PM2.5", "PM10", "O3", "NO2", "CO"];
+      const pollutantData = [];
+      // Use our helper function getPollutantData for each pollutant.
+      for (let i = 0; i < pollutantOrder.length; i++) {
+        const pollutant = pollutantOrder[i];
+        try {
+          const data = await getPollutantData(page, pollutant, i + 1);
+          pollutantData.push({ parameter: pollutant, reading: data.reading, description: data.description });
+        } catch (err) {
+          console.error(`[scrapeXappp] Error retrieving data for ${pollutant}:`, err);
+        }
+      }
+      
+      // Compute AQI for each pollutant.
       const tableData = pollutantData.map(item => {
         const bp = breakpoints[item.parameter];
         const aqi = bp ? calculateAQI(item.reading, bp) : null;
@@ -228,10 +237,9 @@ export async function scrapeXappp(userLat, userLon) {
           AQI: aqi
         };
       });
-
+      
       return { station: closestCity, stationData: tableData };
     } else {
-      // If no station is within 20 miles, return a fixed message.
       return { station: "South Coast AQMD: No station within 20 miles of this location.", stationData: null };
     }
   } catch (err) {
@@ -262,4 +270,22 @@ export async function scrapeArcgis(lat, lon) {
   } finally {
     if (browser) await browser.close();
   }
+}
+
+/**
+ * Helper: Get pollutant data for a given pollutant symbol by index.
+ * Uses index-based XPath selectors.
+ * Assumes that the page displays pollutant rows in the following fixed order:
+ * 1: PM2.5, 2: PM10, 3: O3, 4: NO2, 5: CO.
+ */
+async function getPollutantData(page, pollutantSymbol, index) {
+  // XPath for current reading in the col-md-2 block.
+  const readingXpath = `(//div[contains(@class, "col-md-2") and .//label[contains(text(),"Current Reading")]]//span[contains(@class,"mtext")])[${index}]`;
+  // XPath for parameter description in the col-md-3 block.
+  const descriptionXpath = `(//div[contains(@class, "col-md-3") and .//label[contains(text(),"Parameter Description")]]//span[contains(@class,"mtext")])[${index}]`;
+  
+  const readingText = await page.locator(readingXpath).innerText({ timeout: 30000 });
+  const descriptionText = await page.locator(descriptionXpath).innerText({ timeout: 30000 });
+  const reading = parseFloat(readingText.replace(/[^0-9.]/g, ''));
+  return { reading, description: descriptionText.trim() };
 }
