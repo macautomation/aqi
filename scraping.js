@@ -81,15 +81,13 @@ const breakpoints = {
 
 /**
  * Helper: Get pollutant data for a given pollutant symbol by index.
- * Uses index-based XPath selectors.
- * Assumes that the pollutant rows appear in the fixed order:
- * 1: PM2.5, 2: PM10, 3: O3, 4: NO2, 5: CO.
+ * Uses simpler XPath selectors based on the labels.
  */
 async function getPollutantData(page, pollutantSymbol, index) {
-  // XPath for the current reading in the col-md-2 block.
-  const readingXpath = `(//div[contains(@class, "col-md-2") and .//label[contains(text(),"Current Reading")]]//span[contains(@class,"mtext")])[${index}]`;
-  // XPath for the parameter description in the col-md-3 block.
-  const descriptionXpath = `(//div[contains(@class, "col-md-3") and .//label[contains(text(),"Parameter Description")]]//span[contains(@class,"mtext")])[${index}]`;
+  // Try a simpler XPath: look for the label "Current Reading" and get the following span.
+  const readingXpath = `(//label[contains(text(),"Current Reading")]/following-sibling::span)[${index}]`;
+  // Similarly for the parameter description.
+  const descriptionXpath = `(//label[contains(text(),"Parameter Description")]/following-sibling::span)[${index}]`;
   
   const readingText = await page.locator(readingXpath).innerText({ timeout: 30000 });
   const descriptionText = await page.locator(descriptionXpath).innerText({ timeout: 30000 });
@@ -129,8 +127,8 @@ export async function scrapeFireAirnow(url) {
  * (B) scrapeXappp
  * Scrapes the AQMD station page at https://xappp.aqmd.gov/aqdetail/ to determine the closest station
  * (city) based on user latitude/longitude. If the closest city is within 20 miles, it uses live XPath scraping
- * to extract pollutant data for PM2.5, PM10, O₃, NO₂, and CO, computes the AQI for each pollutant, and builds
- * table data. (Wind data is scraped separately and not included in the table.)
+ * to extract pollutant data for PM2.5, PM10, O₃, NO₂, and CO, computes the AQI for each pollutant using embedded EPA breakpoints,
+ * and builds table data.
  */
 export async function scrapeXappp(userLat, userLon) {
   let browser;
@@ -211,9 +209,7 @@ export async function scrapeXappp(userLat, userLon) {
     
     // If the closest city is within 20 miles, scrape live pollutant data.
     if (closestCity && minDistance <= 20) {
-      // Use index-based XPath selectors to extract pollutant data.
-      // We assume the page displays rows for pollutants in the fixed order:
-      // 1: PM2.5, 2: PM10, 3: O3, 4: NO2, 5: CO.
+      // Define the fixed pollutant order.
       const pollutantOrder = ["PM2.5", "PM10", "O3", "NO2", "CO"];
       const pollutantData = [];
       for (let i = 0; i < pollutantOrder.length; i++) {
