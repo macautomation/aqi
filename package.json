@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "postinstall": "npx playwright install"
+    "postinstall": "PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install"
   },
   "dependencies": {
     "express": "^4.18.2",
