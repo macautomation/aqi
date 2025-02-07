@@ -1,3 +1,4 @@
+// scraping.js
 import { chromium } from 'playwright';
 
 // (A) Fire AirNow
@@ -27,7 +28,7 @@ export async function scrapeFireAirnow(url) {
   }
 }
 
-// (B) xappp
+// (B) xappp – updated to use Playwright’s locator API (no page.$x)
 export async function scrapeXappp(lat, lon) {
   let browser;
   try {
@@ -38,16 +39,15 @@ export async function scrapeXappp(lat, lon) {
     const page = await browser.newPage();
     await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil: 'domcontentloaded' });
 
-    // Use Playwright's page.$$ with an XPath selector.
-    const dropdownOptions = await page.$$(
-      'xpath=//select//option[contains(text(), "-- Select a Station --")]'
-    );
-    if (!dropdownOptions || dropdownOptions.length === 0) {
+    // Use Playwright's locator with an XPath expression.
+    const locator = page.locator('xpath=//select//option[contains(text(), "-- Select a Station --")]');
+    const count = await locator.count();
+    if (count === 0) {
       console.log('[scrapeXappp] no station dropdown option found');
       return null;
     }
     // Get the select element's current value
-    const selectHandle = await page.$("select");
+    const selectHandle = await page.$('select');
     const selectedValue = await selectHandle.evaluate(el => el.value);
     return { station: "Default Station", aqiText: "42", selected: selectedValue };
   } catch (err) {
@@ -58,7 +58,7 @@ export async function scrapeXappp(lat, lon) {
   }
 }
 
-// (C) ArcGIS
+// (C) ArcGIS – unchanged except for using Playwright
 export async function scrapeArcgis(lat, lon) {
   let browser;
   try {
