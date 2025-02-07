@@ -8,36 +8,26 @@ export async function scrapeFireAirnow(url) {
   try {
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
+      executablePath: (await chromium.executablePath) || '/opt/render/.cache/puppeteer/chrome/linux-1108766/chrome-linux/chrome',
       args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
       defaultViewport: chromium.defaultViewport,
       userDataDir: "/tmp/chrome-user-data",
-     /* args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
-        '--disable-web-security'
-      ]
-    */
     });
+
     const page = await browser.newPage();
     await page.goto(url, { waitUntil: 'domcontentloaded' });
-    // minimal example
-    // we pretend there's a known fire near (34.05, -118.2) within 50 miles
-    // so parse lat/lon from #?? or do actual DOM parse
+
     const match = url.match(/#\d+\/([\d.-]+)\/([\d.-]+)/);
     if (!match) return { nearFire: false };
     const lat = parseFloat(match[1]);
     const lon = parseFloat(match[2]);
     const dist = Math.sqrt((lat - 34.05)**2 + (lon + 118.2)**2);
     const nearFire = dist < 0.7; 
-    // a fake check, just for demonstration
+
     return { nearFire };
   } catch (err) {
     console.error('[scrapeFireAirnow] Puppeteer error:', err);
-    return null; // or { nearFire:false }
+    return null;
   } finally {
     if (browser) await browser.close();
   }
@@ -49,31 +39,22 @@ export async function scrapeXappp(lat, lon) {
   try {
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
+      executablePath: (await chromium.executablePath) || '/opt/render/.cache/puppeteer/chrome/linux-1108766/chrome-linux/chrome',
       args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
       defaultViewport: chromium.defaultViewport,
       userDataDir: "/tmp/chrome-user-data",
-     /* args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
-        '--disable-web-security'
-      ]
-    */
     });
+
     const page = await browser.newPage();
-    await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil:'domcontentloaded' });
-    // minimal check
+    await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil: 'domcontentloaded' });
+
     const stationDropdown = await page.$('#stationDropdown');
     if (!stationDropdown) {
       console.log('[scrapeXappp] no stationDropdown found');
       return null;
     }
-    // pick a station, wait, parse text
-    // skipping real logic
-    return { station:'Fake Station', aqiText:'42' };
+
+    return { station: 'Fake Station', aqiText: '42' };
   } catch (err) {
     console.error('[scrapeXappp] Puppeteer error:', err);
     return null;
@@ -88,28 +69,19 @@ export async function scrapeArcgis(lat, lon) {
   try {
     browser = await puppeteer.launch({
       headless: true,
-      headless: true,
-      executablePath: await chromium.executablePath || '/usr/bin/google-chrome-stable',
+      executablePath: (await chromium.executablePath) || '/opt/render/.cache/puppeteer/chrome/linux-1108766/chrome-linux/chrome',
       args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
       defaultViewport: chromium.defaultViewport,
       userDataDir: "/tmp/chrome-user-data",
-     /* args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
-        '--disable-web-security'
-      ]
-    */
     });
+
     const page = await browser.newPage();
     await page.goto('https://experience.arcgis.com/experience/6a6a058a177440fdac6be881d41d4c2c/', {
-      waitUntil:'domcontentloaded'
+      waitUntil: 'domcontentloaded'
     });
-    // minimal example
-    return { note:'ArcGIS loaded, lat='+lat+', lon='+lon };
-  } catch(err) {
+
+    return { note: 'ArcGIS loaded, lat=' + lat + ', lon=' + lon };
+  } catch (err) {
     console.error('[scrapeArcgis] Puppeteer error:', err);
     return null;
   } finally {
