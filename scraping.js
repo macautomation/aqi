@@ -19,8 +19,7 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Helper: Generic AQI calculation function based on EPA breakpoints.
- * Uses linear interpolation between breakpoints.
+ * Helper: Calculate AQI using linear interpolation from EPA breakpoints.
  */
 function calculateAQI(conc, bp) {
   for (const range of bp) {
@@ -35,7 +34,6 @@ function calculateAQI(conc, bp) {
 
 /**
  * Breakpoints for pollutant AQI calculations.
- * (These are sample breakpoints; adjust as needed.)
  */
 const breakpoints = {
   "PM2.5": [
@@ -91,7 +89,7 @@ const breakpoints = {
 
 /**
  * (A) scrapeFireAirnow
- * Launches a browser to scrape Fire AirNow data from a given URL.
+ * Scrapes Fire AirNow data from a given URL.
  */
 export async function scrapeFireAirnow(url) {
   let browser;
@@ -119,10 +117,10 @@ export async function scrapeFireAirnow(url) {
 
 /**
  * (B) scrapeXappp
- * Navigates to the AQMD station page, extracts a list of cities from a dropdown,
+ * Scrapes the AQMD station page, extracts city names from the dropdown (#SelectList),
  * calculates the distance from the user's location to each city's center, and:
- * - If the closest city is within 20 miles, simulates retrieving pollutant data,
- *   calculates the AQI for each pollutant using breakpoints, and returns the station data as a table.
+ * - If the closest city is within 20 miles, simulates pollutant data retrieval,
+ *   computes the AQI for each pollutant using embedded breakpoints, and builds table data.
  * - Otherwise, returns a fixed message indicating no station is available.
  */
 export async function scrapeXappp(userLat, userLon) {
@@ -135,7 +133,7 @@ export async function scrapeXappp(userLat, userLon) {
     const page = await browser.newPage();
     await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil: 'domcontentloaded' });
 
-    // Wait for the dropdown element with id "SelectList"
+    // Wait for the dropdown element using the correct selector (#SelectList)
     let dropdown;
     try {
       dropdown = await page.waitForSelector('#SelectList', { timeout: 10000 });
@@ -151,7 +149,9 @@ export async function scrapeXappp(userLat, userLon) {
 
     // Extract the list of city names from the dropdown, excluding the default placeholder.
     const cityOptions = await page.$$eval('#SelectList option', options =>
-      options.map(o => o.textContent.trim()).filter(text => text && text !== '-- Select a Station --')
+      options
+        .map(o => o.textContent.trim())
+        .filter(text => text && text !== '-- Select a Station --')
     );
     console.log('[scrapeXappp] Found city options:', cityOptions);
 
@@ -187,7 +187,7 @@ export async function scrapeXappp(userLat, userLon) {
       "West Los Angeles": { lat: 34.032, lon: -118.451 }
     };
 
-    // Determine the closest city from the user's location.
+    // Calculate the distance from the user's location to each city's center.
     let closestCity = null;
     let minDistance = Infinity;
     for (const city of cityOptions) {
@@ -204,24 +204,29 @@ export async function scrapeXappp(userLat, userLon) {
     }
     console.log('[scrapeXappp] Closest city:', closestCity, 'Distance:', minDistance, 'miles');
 
-    // If the closest city is within 20 miles, then retrieve pollutant data.
+    // If the closest city is within 20 miles, retrieve pollutant data and compute AQI.
     if (closestCity && minDistance <= 20) {
-      // For demonstration, we simulate pollutant readings.
-      // In a production system, replace this with actual scraped data.
+      // Simulated pollutant readings. Replace these with your actual scraping logic.
       const pollutantData = [
         { parameter: "PM2.5", reading: 10.5, description: "Fine Particulate Matter (µg/m³)" },
         { parameter: "PM10", reading: 40, description: "Coarse Particulate Matter (µg/m³)" },
         { parameter: "O3", reading: 0.040, description: "Ozone (ppm)" },
         { parameter: "NO2", reading: 0.020, description: "Nitrogen Dioxide (ppm)" },
         { parameter: "SO2", reading: 0.005, description: "Sulfur Dioxide (ppm)" },
-        { parameter: "CO", reading: 0.4, description: "Carbon Monoxide (ppm)" }
-        // You can add more parameters here (e.g., WD for wind direction) if needed.
+        { parameter: "CO", reading: 0.4, description: "Carbon Monoxide (ppm)" },
+        { parameter: "WD", reading: 135, description: "Wind Direction (degrees)", aqiCalc: false }
       ];
 
-      // For each pollutant, compute the AQI using the embedded breakpoint logic.
+      // Build table data by computing the AQI for each pollutant.
       const tableData = pollutantData.map(item => {
-        const bp = breakpoints[item.parameter];
-        const aqi = bp ? calculateAQI(item.reading, bp) : null;
+        let aqi = null;
+        // For parameters that should not have AQI (e.g. wind direction), set AQI as "N/A"
+        if (item.aqiCalc === false) {
+          aqi = "N/A";
+        } else {
+          const bp = breakpoints[item.parameter];
+          aqi = bp ? calculateAQI(item.reading, bp) : null;
+        }
         return {
           Parameter: item.parameter,
           "Current Reading": item.reading,
