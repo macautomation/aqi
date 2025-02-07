@@ -39,7 +39,6 @@
   </div>
 
   <script>
-    // Helper to convert degrees to cardinal direction
     function degreesToCardinal(deg) {
       const directions = ["North", "North-East", "East", "South-East", "South", "South-West", "West", "North-West"];
       deg = deg % 360;
@@ -47,7 +46,6 @@
       return directions[index];
     }
 
-    // Helper to get color for AQI value
     function aqiColor(aqi) {
       if (aqi <= 50) return "green";
       if (aqi <= 100) return "yellow";
@@ -57,22 +55,18 @@
       return "maroon";
     }
 
-    // Fetch the stored report from the server (which must return JSON)
     fetch('/api/myReport')
       .then(response => response.json())
       .then(data => {
-        // Expected structure:
-        // data = { addresses: [ { address: "...", hourly: { AirNow: {aqi: ..}, Clarity: {...}, PurpleAir: {...}, SouthCoastAQMD: {...}, average: .., wind: { speed, deg, tooltip, color }, alerts: [{source, title, link}, ...], fire: { info, defaultDistance }, lead: {...}, chlorine: {...}, bromine: {...} }, daily: { ... same keys ... } }, ... ] }
         const container = document.getElementById('reportContainer');
         if (!data.addresses || data.addresses.length === 0) {
-          container.innerHTML = "<p>No addresses found in your report.</p>";
+          container.innerHTML = "<p>No report data available. Please refresh or contact support.</p>";
           return;
         }
         data.addresses.forEach(addr => {
           const section = document.createElement('div');
           section.className = "address-section";
 
-          // Address header
           const header = document.createElement('h3');
           header.textContent = addr.address;
           section.appendChild(header);
@@ -82,27 +76,23 @@
           const hourlyHeader = document.createElement('h4');
           hourlyHeader.textContent = "Last Hour Data";
           hourlyDiv.appendChild(hourlyHeader);
-          // Create a list of readings
           const hourlyList = document.createElement('ul');
 
-          // For each AQI source (if present)
           ["AirNow", "Clarity", "PurpleAir", "SouthCoastAQMD"].forEach(source => {
-            if (addr.hourly[source]) {
+            if (addr.hourly && addr.hourly[source]) {
               const li = document.createElement('li');
               li.innerHTML = `<span>${source} AQI: </span>` +
                 `<span class="aqi" style="color: ${aqiColor(addr.hourly[source].aqi)};">${addr.hourly[source].aqi}</span>`;
               hourlyList.appendChild(li);
             }
           });
-          // Average AQI
-          if (addr.hourly.average !== undefined) {
+          if (addr.hourly && addr.hourly.average !== undefined) {
             const li = document.createElement('li');
             li.innerHTML = `<span>Average AQI: </span>` +
               `<span class="aqi" style="color: ${aqiColor(addr.hourly.average)};">${addr.hourly.average}</span>`;
             hourlyList.appendChild(li);
           }
-          // Wind information (append "mph" and convert degrees)
-          if (addr.hourly.wind) {
+          if (addr.hourly && addr.hourly.wind) {
             const li = document.createElement('li');
             const wind = addr.hourly.wind;
             li.innerHTML = `<span>Wind: ${wind.speed} mph, Direction: ${wind.deg}° (${degreesToCardinal(wind.deg)})</span>`;
@@ -110,8 +100,7 @@
             li.title = wind.tooltip;
             hourlyList.appendChild(li);
           }
-          // Alerts
-          if (addr.hourly.alerts && addr.hourly.alerts.length > 0) {
+          if (addr.hourly && addr.hourly.alerts && addr.hourly.alerts.length > 0) {
             const li = document.createElement('li');
             li.innerHTML = "<strong>Recent Alerts:</strong><br/>";
             addr.hourly.alerts.forEach(alert => {
@@ -119,16 +108,14 @@
             });
             hourlyList.appendChild(li);
           }
-          // Fire boundary info with a clickable distance link
-          if (addr.hourly.fire && addr.hourly.fire.info) {
+          if (addr.hourly && addr.hourly.fire && addr.hourly.fire.info) {
             const li = document.createElement('li');
             li.innerHTML = `<span>Fire/Soot Info (within <a href="#" class="fire-distance" data-default="${addr.hourly.fire.defaultDistance}">${addr.hourly.fire.defaultDistance} miles</a>): </span>` +
               `<span>${addr.hourly.fire.info}</span>`;
             hourlyList.appendChild(li);
           }
-          // Lead, Chlorine, Bromine readings
           ["lead", "chlorine", "bromine"].forEach(elem => {
-            if (addr.hourly[elem] !== undefined) {
+            if (addr.hourly && addr.hourly[elem] !== undefined) {
               const li = document.createElement('li');
               li.innerHTML = `<span>${elem.charAt(0).toUpperCase() + elem.slice(1)}: ${addr.hourly[elem]}</span>`;
               hourlyList.appendChild(li);
@@ -137,18 +124,16 @@
           hourlyDiv.appendChild(hourlyList);
           section.appendChild(hourlyDiv);
 
-          // Divider
           const divider = document.createElement('div');
           divider.className = "divider";
           section.appendChild(divider);
 
-          // 24 Hour Data – similar structure
+          // Daily Data – similar structure
           const dailyDiv = document.createElement('div');
           const dailyHeader = document.createElement('h4');
           dailyHeader.textContent = "Last 24 Hour Data";
           dailyDiv.appendChild(dailyHeader);
           const dailyList = document.createElement('ul');
-          // (Repeat for daily; for brevity we assume the same keys as hourly)
           ["AirNow", "Clarity", "PurpleAir", "SouthCoastAQMD"].forEach(source => {
             if (addr.daily && addr.daily[source]) {
               const li = document.createElement('li');
@@ -171,7 +156,6 @@
             li.title = wind.tooltip;
             dailyList.appendChild(li);
           }
-          // (Include alerts, fire info, and lead/chlorine/bromine as above)
           dailyDiv.appendChild(dailyList);
           section.appendChild(dailyDiv);
 
@@ -183,11 +167,9 @@
         document.getElementById('reportContainer').innerHTML = "<p>Error loading report.</p>";
       });
 
-    // Modal logic for fire distance selection
     document.addEventListener('click', function(e) {
       if (e.target && e.target.classList.contains('fire-distance')) {
         e.preventDefault();
-        // Show modal
         document.getElementById('fireModal').style.display = 'block';
       }
     });
@@ -197,7 +179,6 @@
     document.querySelectorAll('.distanceOption').forEach(function(btn) {
       btn.addEventListener('click', function() {
         const newDistance = btn.getAttribute('data-distance');
-        // Here you might update the report via an AJAX call or store the preference locally.
         alert("New default distance set to " + newDistance + " miles (update this setting on the server as needed).");
         document.getElementById('fireModal').style.display = 'none';
       });
