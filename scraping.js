@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 
 // Helper: Calculate Haversine distance (in miles) between two latitude/longitude pairs.
 function haversineDistance(lat1, lon1, lat2, lon2) {
-  const toRad = (angle) => angle * (Math.PI / 180);
+  const toRad = angle => angle * (Math.PI / 180);
   const R = 3958.8; // Earth's radius in miles
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
@@ -46,7 +46,7 @@ export async function scrapeFireAirnow(url) {
 }
 
 //
-// (B) scrapeXappp - Calculate closest station based on city centers
+// (B) scrapeXappp - Updated to return a fixed message when the closest city is within 20 miles
 //
 export async function scrapeXappp(userLat, userLon) {
   let browser;
@@ -58,7 +58,7 @@ export async function scrapeXappp(userLat, userLon) {
     const page = await browser.newPage();
     await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil: 'domcontentloaded' });
 
-    // Wait for the dropdown element using the correct ID (#SelectList)
+    // Wait for the dropdown using the correct selector (#SelectList)
     let dropdown;
     try {
       dropdown = await page.waitForSelector('#SelectList', { timeout: 10000 });
@@ -72,13 +72,15 @@ export async function scrapeXappp(userLat, userLon) {
       return null;
     }
 
-    // Extract city names from the dropdown (ignoring the default placeholder)
+    // Extract city names from the dropdown, excluding the default option.
     const cityOptions = await page.$$eval('#SelectList option', options =>
-      options.map(o => o.textContent.trim()).filter(text => text && text !== '-- Select a Station --')
+      options
+        .map(o => o.textContent.trim())
+        .filter(text => text && text !== '-- Select a Station --')
     );
     console.log('[scrapeXappp] Found city options:', cityOptions);
 
-    // Mapping of city names (from the dropdown) to approximate center coordinates.
+    // Mapping of city names (as shown in the dropdown) to their approximate center coordinates.
     // Update these coordinates as needed for accuracy.
     const cityCenters = {
       "Anaheim": { lat: 33.8353, lon: -117.9145 },
@@ -111,7 +113,7 @@ export async function scrapeXappp(userLat, userLon) {
       "West Los Angeles": { lat: 34.032, lon: -118.451 }
     };
 
-    // Find the closest city to the user's location.
+    // Calculate the distance from the user's location to each city's center.
     let closestCity = null;
     let minDistance = Infinity;
     for (const city of cityOptions) {
@@ -126,12 +128,15 @@ export async function scrapeXappp(userLat, userLon) {
         console.log(`[scrapeXappp] No coordinates found for city: ${city}`);
       }
     }
-
     console.log('[scrapeXappp] Closest city:', closestCity, 'Distance:', minDistance, 'miles');
 
-    // If the closest city is within 20 miles, return it; otherwise, return null.
+    // New behavior:
+    // Instead of returning the closest city and a dummy AQI value when the closest distance is <= 20 miles,
+    // return a message stating that no station is available.
     if (closestCity && minDistance <= 20) {
-      // Replace the dummy AQI value "42" with real scraping logic if available.
+      return { station: "South Coast AQMD: No station within 20 miles of this location.", aqiText: null };
+    } else if (closestCity) {
+      // If the closest city is more than 20 miles away, return that station and a dummy AQI value.
       return { station: closestCity, aqiText: '42' };
     } else {
       return { station: null, aqiText: null };
