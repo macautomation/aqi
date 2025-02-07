@@ -80,6 +80,24 @@ const breakpoints = {
 };
 
 /**
+ * Helper: Get pollutant data for a given pollutant symbol by index.
+ * Uses index-based XPath selectors.
+ * Assumes that the pollutant rows appear in the fixed order:
+ * 1: PM2.5, 2: PM10, 3: O3, 4: NO2, 5: CO.
+ */
+async function getPollutantData(page, pollutantSymbol, index) {
+  // XPath for the current reading in the col-md-2 block.
+  const readingXpath = `(//div[contains(@class, "col-md-2") and .//label[contains(text(),"Current Reading")]]//span[contains(@class,"mtext")])[${index}]`;
+  // XPath for the parameter description in the col-md-3 block.
+  const descriptionXpath = `(//div[contains(@class, "col-md-3") and .//label[contains(text(),"Parameter Description")]]//span[contains(@class,"mtext")])[${index}]`;
+  
+  const readingText = await page.locator(readingXpath).innerText({ timeout: 30000 });
+  const descriptionText = await page.locator(descriptionXpath).innerText({ timeout: 30000 });
+  const reading = parseFloat(readingText.replace(/[^0-9.]/g, ''));
+  return { reading, description: descriptionText.trim() };
+}
+
+/**
  * (A) scrapeFireAirnow
  * Scrapes Fire AirNow data from a given URL.
  */
@@ -108,30 +126,11 @@ export async function scrapeFireAirnow(url) {
 }
 
 /**
- * Helper: Get pollutant data for a given pollutant symbol by index.
- * Uses index-based XPath selectors.
- * Assumes that the pollutant order on the page is fixed:
- * 1: PM2.5, 2: PM10, 3: O3, 4: NO2, 5: CO.
- */
-async function getPollutantData(page, pollutantSymbol, index) {
-  // XPath for current reading: we look for the div with "Current Reading" label in the col-md-2 block.
-  const readingXpath = `(//div[contains(@class, "col-md-2") and .//label[contains(text(),"Current Reading")]]//span[contains(@class,"mtext")])[${index}]`;
-  // XPath for parameter description: in the col-md-3 block.
-  const descriptionXpath = `(//div[contains(@class, "col-md-3") and .//label[contains(text(),"Parameter Description")]]//span[contains(@class,"mtext")])[${index}]`;
-  
-  const readingText = await page.locator(readingXpath).innerText({ timeout: 30000 });
-  const descriptionText = await page.locator(descriptionXpath).innerText({ timeout: 30000 });
-  const reading = parseFloat(readingText.replace(/[^0-9.]/g, ''));
-  return { reading, description: descriptionText.trim() };
-}
-
-/**
  * (B) scrapeXappp
  * Scrapes the AQMD station page at https://xappp.aqmd.gov/aqdetail/ to determine the closest station
- * (city) based on user latitude/longitude.
- * If the closest city is within 20 miles, it scrapes live pollutant data for PM2.5, PM10, O₃, NO₂, and CO
- * using index-based XPath selectors and computes the AQI for each pollutant using embedded EPA breakpoints.
- * (Wind data is scraped separately and not included in this table.)
+ * (city) based on user latitude/longitude. If the closest city is within 20 miles, it uses live XPath scraping
+ * to extract pollutant data for PM2.5, PM10, O₃, NO₂, and CO, computes the AQI for each pollutant, and builds
+ * table data. (Wind data is scraped separately and not included in the table.)
  */
 export async function scrapeXappp(userLat, userLon) {
   let browser;
@@ -193,7 +192,7 @@ export async function scrapeXappp(userLat, userLon) {
       "West Los Angeles": { lat: 34.032, lon: -118.451 }
     };
     
-    // Determine the closest city based on user coordinates.
+    // Determine the closest city.
     let closestCity = null;
     let minDistance = Infinity;
     for (const city of cityOptions) {
@@ -212,17 +211,17 @@ export async function scrapeXappp(userLat, userLon) {
     
     // If the closest city is within 20 miles, scrape live pollutant data.
     if (closestCity && minDistance <= 20) {
-      // Define the order of pollutants as they appear on the page.
+      // Use index-based XPath selectors to extract pollutant data.
+      // We assume the page displays rows for pollutants in the fixed order:
+      // 1: PM2.5, 2: PM10, 3: O3, 4: NO2, 5: CO.
       const pollutantOrder = ["PM2.5", "PM10", "O3", "NO2", "CO"];
       const pollutantData = [];
-      // Use our helper function getPollutantData for each pollutant.
       for (let i = 0; i < pollutantOrder.length; i++) {
-        const pollutant = pollutantOrder[i];
         try {
-          const data = await getPollutantData(page, pollutant, i + 1);
-          pollutantData.push({ parameter: pollutant, reading: data.reading, description: data.description });
+          const data = await getPollutantData(page, pollutantOrder[i], i + 1);
+          pollutantData.push({ parameter: pollutantOrder[i], reading: data.reading, description: data.description });
         } catch (err) {
-          console.error(`[scrapeXappp] Error retrieving data for ${pollutant}:`, err);
+          console.error(`[scrapeXappp] Error retrieving data for ${pollutantOrder[i]}:`, err);
         }
       }
       
@@ -270,22 +269,4 @@ export async function scrapeArcgis(lat, lon) {
   } finally {
     if (browser) await browser.close();
   }
-}
-
-/**
- * Helper: Get pollutant data for a given pollutant symbol by index.
- * Uses index-based XPath selectors.
- * Assumes that the page displays pollutant rows in the following fixed order:
- * 1: PM2.5, 2: PM10, 3: O3, 4: NO2, 5: CO.
- */
-async function getPollutantData(page, pollutantSymbol, index) {
-  // XPath for current reading in the col-md-2 block.
-  const readingXpath = `(//div[contains(@class, "col-md-2") and .//label[contains(text(),"Current Reading")]]//span[contains(@class,"mtext")])[${index}]`;
-  // XPath for parameter description in the col-md-3 block.
-  const descriptionXpath = `(//div[contains(@class, "col-md-3") and .//label[contains(text(),"Parameter Description")]]//span[contains(@class,"mtext")])[${index}]`;
-  
-  const readingText = await page.locator(readingXpath).innerText({ timeout: 30000 });
-  const descriptionText = await page.locator(descriptionXpath).innerText({ timeout: 30000 });
-  const reading = parseFloat(readingText.replace(/[^0-9.]/g, ''));
-  return { reading, description: descriptionText.trim() };
 }
