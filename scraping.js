@@ -1,7 +1,9 @@
 // scraping.js
 import { chromium } from 'playwright';
 
-// Helper: Calculate the Haversine distance (in miles) between two latitude/longitude pairs.
+/**
+ * Helper: Calculate the Haversine distance (in miles) between two latitude/longitude pairs.
+ */
 function haversineDistance(lat1, lon1, lat2, lon2) {
   const toRad = angle => angle * (Math.PI / 180);
   const R = 3958.8; // Earth's radius in miles
@@ -16,11 +18,13 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-// Helper: Generic AQI calculation function based on EPA breakpoints.
+/**
+ * Helper: Generic AQI calculation function based on EPA breakpoints.
+ * Uses linear interpolation between breakpoints.
+ */
 function calculateAQI(conc, bp) {
   for (const range of bp) {
     if (conc >= range.concLow && conc <= range.concHigh) {
-      // Linear interpolation:
       const aqi = ((range.aqiHigh - range.aqiLow) / (range.concHigh - range.concLow)) *
                   (conc - range.concLow) + range.aqiLow;
       return Math.round(aqi);
@@ -29,7 +33,10 @@ function calculateAQI(conc, bp) {
   return null;
 }
 
-// Breakpoints for each pollutant
+/**
+ * Breakpoints for pollutant AQI calculations.
+ * (These are sample breakpoints; adjust as needed.)
+ */
 const breakpoints = {
   "PM2.5": [
     { concLow: 0.0, concHigh: 12.0, aqiLow: 0, aqiHigh: 50 },
@@ -82,9 +89,42 @@ const breakpoints = {
   ]
 };
 
-//
-// (B) scrapeXappp - Updated to return station data with computed pollutant AQI
-//
+/**
+ * (A) scrapeFireAirnow
+ * Launches a browser to scrape Fire AirNow data from a given URL.
+ */
+export async function scrapeFireAirnow(url) {
+  let browser;
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    const page = await browser.newPage();
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const match = url.match(/#\d+\/([\d.-]+)\/([\d.-]+)/);
+    if (!match) return { nearFire: false };
+    const lat = parseFloat(match[1]);
+    const lon = parseFloat(match[2]);
+    const dist = Math.sqrt((lat - 34.05) ** 2 + (lon + 118.2) ** 2);
+    const nearFire = dist < 0.7;
+    return { nearFire };
+  } catch (err) {
+    console.error('[scrapeFireAirnow] error:', err);
+    return null;
+  } finally {
+    if (browser) await browser.close();
+  }
+}
+
+/**
+ * (B) scrapeXappp
+ * Navigates to the AQMD station page, extracts a list of cities from a dropdown,
+ * calculates the distance from the user's location to each city's center, and:
+ * - If the closest city is within 20 miles, simulates retrieving pollutant data,
+ *   calculates the AQI for each pollutant using breakpoints, and returns the station data as a table.
+ * - Otherwise, returns a fixed message indicating no station is available.
+ */
 export async function scrapeXappp(userLat, userLon) {
   let browser;
   try {
@@ -95,7 +135,7 @@ export async function scrapeXappp(userLat, userLon) {
     const page = await browser.newPage();
     await page.goto('https://xappp.aqmd.gov/aqdetail/', { waitUntil: 'domcontentloaded' });
 
-    // Wait for the dropdown element using the correct selector (#SelectList)
+    // Wait for the dropdown element with id "SelectList"
     let dropdown;
     try {
       dropdown = await page.waitForSelector('#SelectList', { timeout: 10000 });
@@ -109,11 +149,9 @@ export async function scrapeXappp(userLat, userLon) {
       return null;
     }
 
-    // Extract city options from the dropdown, excluding the default placeholder.
+    // Extract the list of city names from the dropdown, excluding the default placeholder.
     const cityOptions = await page.$$eval('#SelectList option', options =>
-      options
-        .map(o => o.textContent.trim())
-        .filter(text => text && text !== '-- Select a Station --')
+      options.map(o => o.textContent.trim()).filter(text => text && text !== '-- Select a Station --')
     );
     console.log('[scrapeXappp] Found city options:', cityOptions);
 
@@ -149,7 +187,7 @@ export async function scrapeXappp(userLat, userLon) {
       "West Los Angeles": { lat: 34.032, lon: -118.451 }
     };
 
-    // Calculate the distance from the user's location to each city's center.
+    // Determine the closest city from the user's location.
     let closestCity = null;
     let minDistance = Infinity;
     for (const city of cityOptions) {
@@ -166,10 +204,10 @@ export async function scrapeXappp(userLat, userLon) {
     }
     console.log('[scrapeXappp] Closest city:', closestCity, 'Distance:', minDistance, 'miles');
 
-    // If a closest city is found and it's within 20 miles, proceed to get pollutant data.
+    // If the closest city is within 20 miles, then retrieve pollutant data.
     if (closestCity && minDistance <= 20) {
-      // Simulate pollutant readings for demonstration.
-      // In production, replace this with actual scraping logic for station pollutant data.
+      // For demonstration, we simulate pollutant readings.
+      // In a production system, replace this with actual scraped data.
       const pollutantData = [
         { parameter: "PM2.5", reading: 10.5, description: "Fine Particulate Matter (µg/m³)" },
         { parameter: "PM10", reading: 40, description: "Coarse Particulate Matter (µg/m³)" },
@@ -177,9 +215,10 @@ export async function scrapeXappp(userLat, userLon) {
         { parameter: "NO2", reading: 0.020, description: "Nitrogen Dioxide (ppm)" },
         { parameter: "SO2", reading: 0.005, description: "Sulfur Dioxide (ppm)" },
         { parameter: "CO", reading: 0.4, description: "Carbon Monoxide (ppm)" }
+        // You can add more parameters here (e.g., WD for wind direction) if needed.
       ];
 
-      // Build table data by computing the AQI for each pollutant.
+      // For each pollutant, compute the AQI using the embedded breakpoint logic.
       const tableData = pollutantData.map(item => {
         const bp = breakpoints[item.parameter];
         const aqi = bp ? calculateAQI(item.reading, bp) : null;
@@ -192,11 +231,9 @@ export async function scrapeXappp(userLat, userLon) {
       });
 
       return { station: closestCity, stationData: tableData };
-    } else if (closestCity) {
-      // If the closest city is more than 20 miles away, return a message indicating no station.
-      return { station: "South Coast AQMD: No station within 20 miles of this location.", stationData: null };
     } else {
-      return { station: null, stationData: null };
+      // If no city is within 20 miles, return a fixed message.
+      return { station: "South Coast AQMD: No station within 20 miles of this location.", stationData: null };
     }
   } catch (err) {
     console.error('[scrapeXappp] error:', err);
@@ -206,9 +243,10 @@ export async function scrapeXappp(userLat, userLon) {
   }
 }
 
-//
-// (C) scrapeArcgis
-//
+/**
+ * (C) scrapeArcgis
+ * Loads the ArcGIS page and returns a note with the provided coordinates.
+ */
 export async function scrapeArcgis(lat, lon) {
   let browser;
   try {
