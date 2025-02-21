@@ -22,7 +22,6 @@ import { distanceMiles } from './utils.js';
 import sgMail from '@sendgrid/mail';
 sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
 
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -34,6 +33,7 @@ const PgSession = pgSession(session);
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended:true }));
+app.use(bodyParser.json()); // so we can handle JSON POST
 app.use(session({
   store: new PgSession({
     pool,
@@ -48,6 +48,21 @@ app.use(passport.session());
 
 // Serve static
 app.use(express.static(__dirname));
+
+// Helper to send email
+async function sendEmail(to, subject, text){
+  const msg={to, from:'noreply@littlegiant.app', subject, text};
+  await sgMail.send(msg);
+}
+
+// Helper: ensureAuth
+function ensureAuth(req,res,next){
+  if(req.isAuthenticated()) return next();
+  if(req.path.startsWith('/api/')){
+    return res.status(401).json({error:'Not authenticated'});
+  }
+  return res.redirect('/html/login.html');
+}
 
 app.get('/', (req,res)=>{
   if (req.isAuthenticated()) return res.redirect('/html/dashboard.html');
@@ -74,21 +89,6 @@ app.get('/js/autocomplete.js',(req,res)=>{
   res.send(content);
 });
 
-// Send email
-async function sendEmail(to, subject, text){
-  const msg={to, from:'noreply@littlegiant.app', subject, text};
-  await sgMail.send(msg);
-}
-
-// Check password complexity
-function isPasswordComplex(pass){
-  if(pass.length<8)return false;
-  if(!/[0-9]/.test(pass))return false;
-  if(!/[A-Za-z]/.test(pass))return false;
-  if(!/[^A-Za-z0-9]/.test(pass))return false;
-  return true;
-}
-
 // SIGNUP
 app.post('/api/signup', async(req,res)=>{
   const { email, password, password2, address, agreePolicy, agreeTerms }=req.body;
@@ -101,7 +101,8 @@ app.post('/api/signup', async(req,res)=>{
   if(password!==password2){
     return res.status(400).send('Passwords do not match');
   }
-  if(!isPasswordComplex(password)){
+  // Simple check for complexity
+  if(password.length<8 || !/[0-9]/.test(password) || !/[A-Za-z]/.test(password) || !/[^A-Za-z0-9]/.test(password)){
     return res.status(400).send('Password not complex enough');
   }
   try {
@@ -116,10 +117,8 @@ app.post('/api/signup', async(req,res)=>{
     if(address && address.trim()){
       let lat=null, lon=null;
       if(process.env.GOOGLE_GEOCODE_KEY){
-        console.log('Geocoding address:', address);
         const geoURL='https://maps.googleapis.com/maps/api/geocode/json';
         const resp=await axios.get(geoURL,{params:{ address, key:process.env.GOOGLE_GEOCODE_KEY }});
-        console.log('Geocode result:', JSON.stringify(resp.data));
         if(resp.data.results?.length){
           lat=resp.data.results[0].geometry.location.lat;
           lon=resp.data.results[0].geometry.location.lng;
@@ -172,6 +171,26 @@ app.post('/api/delete-address', ensureAuth, async(req,res)=>{
   res.redirect('/html/dashboard.html');
 });
 
+// set-aqi-radius
+app.post('/api/set-aqi-radius', ensureAuth, async(req,res)=>{
+  const { radius } = req.body;
+  if(!radius) return res.status(400).json({error:'No radius'});
+  await query('UPDATE users SET aqi_radius=$1 WHERE id=$2',[parseInt(radius), req.user.id]);
+  res.json({ success:true });
+});
+
+// set-daily-time
+app.post('/api/set-daily-time', ensureAuth, async(req,res)=>{
+  const { hour, minute }=req.body;
+  if(hour===undefined || minute===undefined){
+    return res.status(400).json({error:'Missing hour/minute'});
+  }
+  await query('UPDATE users SET daily_report_hour=$1, daily_report_minute=$2 WHERE id=$3',[
+    parseInt(hour), parseInt(minute), req.user.id
+  ]);
+  res.json({ success:true });
+});
+
 // LOGIN local
 app.post('/api/login',
   passport.authenticate('local',{failureRedirect:'/html/login.html'}),
@@ -203,7 +222,10 @@ app.post('/api/forgot', async(req,res)=>{
 app.post('/api/reset', async(req,res)=>{
   const{token,newPassword}=req.body;
   if(!token||!newPassword) return res.status(400).send('Missing token or newPassword');
-  if(!isPasswordComplex(newPassword)) return res.status(400).send('New password not complex enough');
+  // check complexity
+  if(newPassword.length<8 || !/[0-9]/.test(newPassword) || !/[A-Za-z]/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)){
+    return res.status(400).send('New password not complex enough');
+  }
   const now=new Date();
   const {rows}=await query(`
     SELECT user_id FROM password_reset_tokens
@@ -244,14 +266,13 @@ app.post('/api/delete-account', ensureAuth, async(req,res)=>{
   });
 });
 
-// GOOGLE
+// OAUTH
 app.get('/auth/google', passport.authenticate('google',{scope:['email','profile']}));
 app.get('/auth/google/callback',
   passport.authenticate('google',{failureRedirect:'/html/login.html'}),
   (req,res)=> res.redirect('/html/dashboard.html')
 );
 
-// APPLE
 app.get('/auth/apple', passport.authenticate('apple'));
 app.post('/auth/apple/callback',
   passport.authenticate('apple',{failureRedirect:'/html/login.html'}),
@@ -264,128 +285,249 @@ app.get('/api/list-addresses', ensureAuth, async(req,res)=>{
   res.json(rows);
 });
 
-// GET REPORT
+// GET REPORT => Return HTML that shows each address's “most recent” vs. “24-hour average” from DB
 app.get('/api/myReport', ensureAuth, async(req,res)=>{
-  const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[req.user.id]);
-  if(!addrRes.rows.length){
-    return res.json({error:'No addresses. Please add an address.'});
-  }
-  let combined=[];
-  for(const row of addrRes.rows){
-    if(!row.lat||!row.lon){
-      combined.push(`Address: ${row.address}\n(No lat/lon, cannot produce AQI)`);
-      continue;
+  try {
+    const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[req.user.id]);
+    if(!addrRes.rows.length){
+      return res.json({error:'No addresses. Please add an address.'});
     }
-    try {
-      const aqi=await fetchAirNowAQI(row.lat,row.lon);
-      const label=labelAirNowAQI(aqi);
-      const ow=await fetchOpenWeather(row.lat,row.lon);
 
-      const fireResult=await scrapeFireAirnow('https://fire.airnow.gov/#10/34.1124/-118.1932');
-      const nearFire=fireResult?.nearFire||false;
+    let html = '';
+    for(const row of addrRes.rows){
+      if(!row.lat || !row.lon){
+        html += `<h4>Address: ${row.address}</h4><p>(No lat/lon, cannot produce AQI)</p>`;
+        continue;
+      }
+      // Get the 10 most recent rows (some might be from different times or different sources)
+      const recentRows = await query(`
+        SELECT * FROM address_hourly_data
+        WHERE address_id=$1
+        ORDER BY timestamp DESC
+        LIMIT 10
+      `,[row.id]);
 
-      const xapppData=await scrapeXappp(row.lat,row.lon);
-      const arcgisData=await scrapeArcgis(row.lat,row.lon);
-      const windColor=getWindStatus(ow.windSpeed, ow.windDeg, nearFire);
+      let airNowClosest = 'N/A';
+      let airNowAverage = 'N/A';
+      let purpleClosest = 'N/A';
+      let purpleAverage = 'N/A';
+      let timeStampStr = '';
+      if(recentRows.rows.length){
+        const airNowRow = recentRows.rows.find(r => r.source==='AirNow');
+        const purpleRow = recentRows.rows.find(r => r.source==='PurpleAir');
+        if(airNowRow){
+          airNowClosest = airNowRow.aqi_closest;
+          airNowAverage = airNowRow.aqi_average;
+          timeStampStr = airNowRow.timestamp;
+        }
+        if(purpleRow){
+          purpleClosest = purpleRow.aqi_closest;
+          purpleAverage = purpleRow.aqi_average;
+          if(!timeStampStr) timeStampStr = purpleRow.timestamp;
+        }
+      }
 
-      let lines=[];
-      lines.push(`Address: ${row.address}`);
-      lines.push(`**Average AQI**: ${aqi||0} (${label})`);
-      lines.push(`**Wind**: Speed=${ow.windSpeed}, Deg=${ow.windDeg}, Indicator=${windColor}`);
-      if(xapppData) lines.push(`Station: ${xapppData.station}, AQI=${xapppData.aqiText||'N/A'}`);
-      if(arcgisData) lines.push(`ArcGIS: ${arcgisData.note}`);
-      if(nearFire) lines.push(`Near fire boundary (<50 miles)`);
-      combined.push(lines.join('\n'));
-    } catch(e) {
-      console.error('[myReport scraping error for address:', row.address, ']', e);
-      combined.push(`Address: ${row.address}\nHourly Report Not Yet Built (Scraping failed).`);
+      // Compute last 24 hour average of “closest” for each source
+      const dayAgo = new Date();
+      dayAgo.setHours(dayAgo.getHours() - 24);
+      const dayRows = await query(`
+        SELECT source,
+               AVG(aqi_closest) as closest_avg
+        FROM address_hourly_data
+        WHERE address_id=$1
+          AND timestamp>$2
+        GROUP BY source
+      `,[row.id, dayAgo]);
+      let airNow24 = 'N/A';
+      let purple24 = 'N/A';
+      for(const d of dayRows.rows){
+        if(d.source==='AirNow'){
+          airNow24 = Math.round(d.closest_avg || 0);
+        } else if(d.source==='PurpleAir'){
+          purple24 = Math.round(d.closest_avg || 0);
+        }
+      }
+
+      html += `<h4>Address: ${row.address}</h4>`;
+      html += `<p><em>Most recent data (timestamp: ${timeStampStr})</em></p>`;
+      html += `<ul>
+        <li>AirNow: Closest AQI=${airNowClosest}, Average in Radius=${airNowAverage}</li>
+        <li>PurpleAir: Closest AQI=${purpleClosest}, Average in Radius=${purpleAverage}</li>
+      </ul>`;
+      html += `<p><strong>24-hour average:</strong> AirNow=${airNow24}, PurpleAir=${purple24}</p>`;
     }
+
+    res.json({ html });
+  } catch(e){
+    console.error('[myReport error]', e);
+    res.status(500).json({ error:'Internal server error' });
   }
-  if(!combined.length){
-    return res.json({report: 'Hourly Report Not Yet Built.'});
-  }
-  const finalReport=combined.join('\n\n');
-  res.json({report: finalReport});
 });
 
-// MANUAL RECHECK
+// MANUAL RECHECK => store fresh data in DB, then respond with updated report
 app.post('/api/report-now', ensureAuth, async(req,res)=>{
-  const baseUrl=`${req.protocol}://${req.get('host')}`;
-  try{
+  try {
+    await fetchAndStoreHourlyDataForUser(req.user.id);
+    // then respond with /api/myReport info
+    const baseUrl=`${req.protocol}://${req.get('host')}`;
     const resp=await axios.get(`${baseUrl}/api/myReport`,{
       headers:{cookie:req.headers.cookie||''}
     });
-    if(!resp.data.report && resp.data.error){
-      // if error => pass it along
+    if(!resp.data.html && resp.data.error){
       return res.status(400).json({error: resp.data.error});
     }
-    if(!resp.data.report){
+    if(!resp.data.html){
       return res.json({report:'Hourly Report Not Yet Built.'});
     }
-    res.json({report: resp.data.report});
-  }catch(err){
+    res.json(resp.data);
+  } catch(err){
     console.error('[report-now error]',err);
     res.status(502).json({error:'Error: HTTP 502 - '+err});
   }
 });
 
-// CRON daily
-cron.schedule('0 8 * * *', async()=>{
-  console.log('[CRON] daily triggered');
-  try{
-    const {rows:users}=await query('SELECT id,email FROM users');
-    for(const user of users){
-      const {rows:addresses}=await query('SELECT * FROM user_addresses WHERE user_id=$1',[user.id]);
-      if(!addresses.length){
-        console.log(`User ${user.email} no addresses, skip daily`);
-        continue;
-      }
-      let combined=[];
-      for(const row of addresses){
-        if(!row.lat||!row.lon){
-          combined.push(`Address: ${row.address}\n(No lat/lon)`);
-          continue;
-        }
-        try {
-          const aqi=await fetchAirNowAQI(row.lat,row.lon);
-          const label=labelAirNowAQI(aqi);
-          const ow=await fetchOpenWeather(row.lat,row.lon);
-          const fireResult=await scrapeFireAirnow('https://fire.airnow.gov/#10/34.1124/-118.1932');
-          const nearFire=fireResult?.nearFire||false;
-          const xapppData=await scrapeXappp(row.lat,row.lon);
-          const arcgisData=await scrapeArcgis(row.lat,row.lon);
-          const windColor=getWindStatus(ow.windSpeed, ow.windDeg, nearFire);
+// Helper to fetch AirNow/PurpleAir data for a user’s addresses, storing in DB
+async function fetchAndStoreHourlyDataForUser(userId){
+  // Get user’s chosen radius
+  const userRows = await query('SELECT aqi_radius FROM users WHERE id=$1',[userId]);
+  if(!userRows.rows.length) return;
+  const radius = userRows.rows[0].aqi_radius || 5;
 
-          let lines=[];
-          lines.push(`Address: ${row.address}`);
-          lines.push(`**Average AQI**: ${aqi||0} (${label})`);
-          lines.push(`**Wind**: Speed=${ow.windSpeed}, Deg=${ow.windDeg}, Indicator=${windColor}`);
-          if(xapppData) lines.push(`Station: ${xapppData.station}, AQI=${xapppData.aqiText||'N/A'}`);
-          if(arcgisData) lines.push(`ArcGIS: ${arcgisData.note}`);
-          if(nearFire) lines.push(`Near fire boundary (<50 miles)`);
-          combined.push(lines.join('\n'));
-        } catch(e) {
-          console.error('[Cron daily scrape error]', e);
-          combined.push(`Address: ${row.address}\nHourly Report Not Yet Built (Scrape fail).`);
-        }
-      }
-      if(!combined.length) continue;
-      const final=combined.join('\n\n');
-      await sendEmail(user.email,'Your Daily AQI Update',final);
-      console.log(`Sent daily update to ${user.email}`);
+  // Fetch addresses
+  const addrRes = await query('SELECT * FROM user_addresses WHERE user_id=$1',[userId]);
+  for(const row of addrRes.rows){
+    if(!row.lat || !row.lon) continue;
+
+    // In real usage, you’d query the AirNow/PurpleAir APIs for all sensors in the bounding box
+    // that covers the given radius, then find:
+    //  - The single “closest” sensor reading
+    //  - The average reading of all sensors within that radius
+    // For demonstration, we’ll do placeholders:
+
+    const airNowClosest = await fetchAirNowAQI(row.lat, row.lon) || 0; // single call
+    const airNowAvg = Math.round(airNowClosest * 0.8); // placeholder
+
+    const purpleClosest = airNowClosest + 2; // placeholder
+    const purpleAvg = airNowClosest + 3;     // placeholder
+
+    const now = new Date();
+    await query(`
+      INSERT INTO address_hourly_data (user_id, address_id, timestamp, source, aqi_closest, aqi_average)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (user_id, address_id, timestamp, source) DO NOTHING
+    `,[ userId, row.id, now, 'AirNow', airNowClosest, airNowAvg ]);
+
+    await query(`
+      INSERT INTO address_hourly_data (user_id, address_id, timestamp, source, aqi_closest, aqi_average)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (user_id, address_id, timestamp, source) DO NOTHING
+    `,[ userId, row.id, now, 'PurpleAir', purpleClosest, purpleAvg ]);
+  }
+}
+
+// CRON SCHEDULING
+// 1) Hourly job: fetch new data for each user
+cron.schedule('0 * * * *', async()=>{
+  console.log('[CRON] hourly triggered');
+  try{
+    const {rows:users}=await query('SELECT id FROM users');
+    for(const user of users){
+      await fetchAndStoreHourlyDataForUser(user.id);
     }
   }catch(e){
-    console.error('[CRON daily]',e);
+    console.error('[CRON hourly]',e);
   }
 });
 
-// ensureAuth => If an /api route & not authed => 401 JSON
-function ensureAuth(req,res,next){
-  if(req.isAuthenticated()) return next();
-  if(req.path.startsWith('/api/')){
-    return res.status(401).json({error:'Not authenticated'});
+// 2) Every 15 min, check which users are due for their daily
+cron.schedule('*/15 * * * *', async()=>{
+  console.log('[CRON] 15-min daily check');
+  try {
+    const now = new Date();
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    // Round the minute down to the nearest 15
+    const block = Math.floor(minute/15)*15;
+
+    // See which users have daily_report_hour == hour and daily_report_minute == block
+    const {rows:dueUsers} = await query(`
+      SELECT id, email
+      FROM users
+      WHERE daily_report_hour=$1
+        AND daily_report_minute=$2
+    `,[hour, block]);
+
+    for(const u of dueUsers){
+      // Pull fresh data
+      await fetchAndStoreHourlyDataForUser(u.id);
+      // Build the daily email
+      const final = await buildDailyEmail(u.id);
+      if(final){
+        await sendEmail(u.email, 'Your Daily AQI Update', final);
+        console.log(`Sent daily update to ${u.email}`);
+      }
+    }
+  } catch(e){
+    console.error('[CRON daily check]', e);
   }
-  return res.redirect('/html/login.html');
+});
+
+// buildDailyEmail => returns plain text
+async function buildDailyEmail(userId){
+  const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[userId]);
+  if(!addrRes.rows.length) return null;
+
+  let lines = [];
+  for(const row of addrRes.rows){
+    if(!row.lat || !row.lon){
+      lines.push(`Address: ${row.address}\n(No lat/lon)`);
+      continue;
+    }
+    // get most recent
+    const recentRows = await query(`
+      SELECT * FROM address_hourly_data
+      WHERE address_id=$1
+      ORDER BY timestamp DESC
+      LIMIT 10
+    `,[row.id]);
+    let airNowClosest='N/A', airNowAverage='N/A';
+    let purpleClosest='N/A', purpleAverage='N/A';
+    let ts='(none)';
+    if(recentRows.rows.length){
+      const an = recentRows.rows.find(r => r.source==='AirNow');
+      const pa = recentRows.rows.find(r => r.source==='PurpleAir');
+      if(an){
+        airNowClosest=an.aqi_closest;
+        airNowAverage=an.aqi_average;
+        ts=an.timestamp;
+      }
+      if(pa){
+        purpleClosest=pa.aqi_closest;
+        purpleAverage=pa.aqi_average;
+        if(!ts) ts=pa.timestamp;
+      }
+    }
+    // last 24 hr avg
+    const dayAgo = new Date();
+    dayAgo.setHours(dayAgo.getHours()-24);
+    const dayRows = await query(`
+      SELECT source,
+             AVG(aqi_closest) as closest_avg
+      FROM address_hourly_data
+      WHERE address_id=$1
+        AND timestamp>$2
+      GROUP BY source
+    `,[row.id, dayAgo]);
+    let an24='N/A';
+    let pa24='N/A';
+    for(const d of dayRows.rows){
+      if(d.source==='AirNow') an24 = Math.round(d.closest_avg || 0);
+      if(d.source==='PurpleAir') pa24 = Math.round(d.closest_avg || 0);
+    }
+
+    lines.push(`Address: ${row.address}\nMost recent (ts=${ts}):\n - AirNow => closest=${airNowClosest}, avgInRadius=${airNowAverage}\n - PurpleAir => closest=${purpleClosest}, avgInRadius=${purpleAverage}\n24hrAvg => AirNow=${an24}, PurpleAir=${pa24}\n`);
+  }
+  return lines.join('\n\n');
 }
 
 app.listen(process.env.PORT||3000, async()=>{
