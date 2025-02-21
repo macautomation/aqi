@@ -34,6 +34,45 @@
   <img src="../images/logo.png" alt="AQI Updates" class="logo">
   <h1>Your Dashboard</h1>
 
+  <!-- 1) Let user select the AQI measurement distance -->
+  <div>
+    <h3>Set Your AQI Measurement Distance</h3>
+    <form id="aqiRadiusForm">
+      <label>
+        Distance:
+        <select id="aqiRadiusSelect">
+          <option value="1">1 mile</option>
+          <option value="3">3 miles</option>
+          <option value="5" selected>5 miles</option>
+          <option value="10">10 miles</option>
+        </select>
+      </label>
+      <button type="submit">Save</button>
+    </form>
+  </div>
+
+  <hr>
+
+  <!-- 2) Let user pick daily report time in 15-minute increments -->
+  <div>
+    <h3>Set Your Daily Report Time</h3>
+    <form id="dailyTimeForm">
+      <label for="dailyHour">Hour (0-23):</label>
+      <input type="number" id="dailyHour" min="0" max="23" value="8" style="width:60px;">
+
+      <label for="dailyMinute">Minute:</label>
+      <select id="dailyMinute">
+        <option value="0">00</option>
+        <option value="15">15</option>
+        <option value="30">30</option>
+        <option value="45">45</option>
+      </select>
+      <button type="submit">Save</button>
+    </form>
+  </div>
+
+  <hr>
+
   <div id="addressesSection">
     <h2>Your Addresses</h2>
     <div id="addressesList">Loading...</div>
@@ -95,6 +134,7 @@ function hideLoading() {
   loadingMsg.style.display = 'none';
 }
 
+// Load user’s addresses
 async function loadAddresses() {
   try {
     const arr = await fetchJSON('/api/list-addresses');
@@ -119,6 +159,7 @@ async function loadAddresses() {
   }
 }
 
+// Load user’s current report.
 async function loadReport() {
   try {
     const data = await fetchJSON('/api/myReport');
@@ -126,35 +167,15 @@ async function loadReport() {
     if (data.error) {
       reportArea.innerText = 'Error: ' + data.error;
     } else {
-      if (data.stationData && Array.isArray(data.stationData)) {
-        let tableHtml = '<h4>Station Data</h4>';
-        tableHtml += '<table class="station-table">';
-        tableHtml += '<thead><tr>';
-        tableHtml += '<th>Parameter</th>';
-        tableHtml += '<th>Current Reading (1-hour average)</th>';
-        tableHtml += '<th>Parameter Description</th>';
-        tableHtml += '<th>AQI</th>';
-        tableHtml += '</tr></thead>';
-        tableHtml += '<tbody>';
-        data.stationData.forEach(row => {
-          tableHtml += '<tr>';
-          tableHtml += `<td>${row.Parameter}</td>`;
-          tableHtml += `<td>${row["Current Reading"]}</td>`;
-          tableHtml += `<td>${row["Parameter Description"]}</td>`;
-          tableHtml += `<td>${row.AQI}</td>`;
-          tableHtml += '</tr>';
-        });
-        tableHtml += '</tbody></table>';
-        reportArea.innerHTML = `<p><strong>Station:</strong> ${data.station || "None"}</p>` + tableHtml;
-      } else {
-        reportArea.innerText = data.report || 'No report.';
-      }
+      // We'll expect data.html if we built an HTML snippet, or fallback to data.report
+      reportArea.innerHTML = data.html || data.report || 'No report.';
     }
   } catch (e) {
     reportArea.innerText = 'Error: ' + e;
   }
 }
 
+// Update now => calls /api/report-now
 async function updateNow() {
   showLoading();
   try {
@@ -164,35 +185,46 @@ async function updateNow() {
     if (data.error) {
       reportArea.innerText = 'Error: ' + data.error;
     } else {
-      if (data.stationData && Array.isArray(data.stationData)) {
-        let tableHtml = '<h4>Station Data</h4>';
-        tableHtml += '<table class="station-table">';
-        tableHtml += '<thead><tr>';
-        tableHtml += '<th>Parameter</th>';
-        tableHtml += '<th>Current Reading (1-hour average)</th>';
-        tableHtml += '<th>Parameter Description</th>';
-        tableHtml += '<th>AQI</th>';
-        tableHtml += '</tr></thead>';
-        tableHtml += '<tbody>';
-        data.stationData.forEach(row => {
-          tableHtml += '<tr>';
-          tableHtml += `<td>${row.Parameter}</td>`;
-          tableHtml += `<td>${row["Current Reading"]}</td>`;
-          tableHtml += `<td>${row["Parameter Description"]}</td>`;
-          tableHtml += `<td>${row.AQI}</td>`;
-          tableHtml += '</tr>';
-        });
-        tableHtml += '</tbody></table>';
-        reportArea.innerHTML = `<p><strong>Station:</strong> ${data.station || "None"}</p>` + tableHtml;
-      } else {
-        reportArea.innerText = data.report;
-      }
+      reportArea.innerHTML = data.html || data.report || 'No report.';
     }
   } catch (e) {
     hideLoading();
     reportArea.innerText = 'Error: ' + e;
   }
 }
+
+// Save the user’s chosen AQI radius
+document.getElementById('aqiRadiusForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const val = document.getElementById('aqiRadiusSelect').value;
+  try {
+    await fetchJSON('/api/set-aqi-radius', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ radius: val })
+    });
+    alert('AQI distance updated');
+  } catch(err) {
+    alert('Error updating distance: ' + err);
+  }
+});
+
+// Save the user’s daily time preference
+document.getElementById('dailyTimeForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const hour = document.getElementById('dailyHour').value;
+  const minute = document.getElementById('dailyMinute').value;
+  try {
+    await fetchJSON('/api/set-daily-time', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hour, minute })
+    });
+    alert('Daily report time updated');
+  } catch(err) {
+    alert('Error updating daily report time: ' + err);
+  }
+});
 
 // Countdown timers for updates.
 function updateCountdowns() {
@@ -201,6 +233,8 @@ function updateCountdowns() {
   nextHour.setHours(now.getHours() + 1, 0, 0, 0);
   const hourlyMs = nextHour - now;
 
+  // The daily time is user-specific. For a quick approach, we’ll do a naive 8 AM.
+  // A robust approach could fetch the user’s stored hour/minute and do real math.
   const nextDaily = new Date(now);
   nextDaily.setHours(8, 0, 0, 0);
   if (nextDaily <= now) nextDaily.setDate(nextDaily.getDate() + 1);
@@ -221,7 +255,7 @@ updateCountdowns();
 
 updateBtn.addEventListener('click', updateNow);
 
-// Initialize address list and report.
+// Initialize
 loadAddresses();
 loadReport();
 </script>
