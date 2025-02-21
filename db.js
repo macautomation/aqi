@@ -46,15 +46,18 @@ export async function initDB() {
       );
     `);
 
-    // We'll store everything in a JSON column for flexible logging
+    // Create a table for storing hourly data for each user address.
     await client.query(`
       CREATE TABLE IF NOT EXISTS address_hourly_data (
         id SERIAL PRIMARY KEY,
         user_id INT REFERENCES users(id),
         address_id INT REFERENCES user_addresses(id),
         timestamp TIMESTAMP NOT NULL,
-        data JSONB,            -- all data: AirNow, PurpleAir, OpenWeather, debug, etc.
-        UNIQUE (user_id, address_id, timestamp)
+        source VARCHAR(50) NOT NULL,   -- 'AirNow', 'PurpleAir', or 'OpenWeather'
+        aqi_closest INT,
+        aqi_average INT,
+        data_json JSONB,
+        UNIQUE (user_id, address_id, timestamp, source)
       );
     `);
 
