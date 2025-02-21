@@ -17,8 +17,10 @@ export async function initDB() {
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255),
         address VARCHAR(255),
-        -- We no longer rely on lat/lon here for multiple addresses
-        latest_report TEXT
+        latest_report TEXT,
+        aqi_radius INT DEFAULT 5,
+        daily_report_hour INT DEFAULT 8,
+        daily_report_minute INT DEFAULT 0
       );
     `);
 
@@ -41,6 +43,21 @@ export async function initDB() {
         address TEXT NOT NULL,
         lat DOUBLE PRECISION,
         lon DOUBLE PRECISION
+      );
+    `);
+
+    // Create a table for storing hourly data for each user address,
+    // to compute daily averages, etc.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS address_hourly_data (
+        id SERIAL PRIMARY KEY,
+        user_id INT REFERENCES users(id),
+        address_id INT REFERENCES user_addresses(id),
+        timestamp TIMESTAMP NOT NULL,
+        source VARCHAR(50) NOT NULL,   -- e.g. 'AirNow', 'PurpleAir'
+        aqi_closest INT,
+        aqi_average INT,
+        UNIQUE (user_id, address_id, timestamp, source)
       );
     `);
 
