@@ -3,7 +3,7 @@
 <head>
   <title>Dashboard</title>
   <style>
-    body { font-family: Arial, sans-serif; margin:20px; background: #f8f8f8; }
+    body { font-family: Arial, sans-serif; margin:20px; background:#f8f8f8; }
     .container { max-width:600px; margin:0 auto; background:#fff; padding:20px; border-radius:4px; }
     h1 { text-align:center; }
     .logo { width:150px; display:block; margin:0 auto 10px; }
@@ -12,22 +12,8 @@
     #reportArea { margin:10px 0; }
     .loadingGif { width:50px; display:block; margin:10px auto; }
     .btn { padding:10px; margin-top:10px; cursor:pointer; }
-    table.station-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 10px;
-    }
-    table.station-table th,
-    table.station-table td {
-      border: 1px solid #ccc;
-      padding: 8px;
-      text-align: left;
-    }
-    table.station-table th {
-      background-color: #f0f0f0;
-    }
-    details { margin: 4px 0; background: #f9f9f9; padding: 4px; }
-    details summary { cursor: pointer; font-weight: bold; }
+    details { margin:4px 0; background:#f9f9f9; padding:4px; }
+    details summary { cursor:pointer; font-weight:bold; }
   </style>
 </head>
 <body>
@@ -108,12 +94,12 @@ async function fetchJSON(url, opts){
   const resp=await fetch(url, opts);
   if(!resp.ok){
     if(resp.status===401){
-      alert('Not authenticated, going to login...');
+      alert('Not authenticated, redirecting to login...');
       window.location='login.html';
       return null;
     }
-    const t=await resp.text();
-    throw new Error(`HTTP ${resp.status}: ${t}`);
+    const tx=await resp.text();
+    throw new Error(`HTTP ${resp.status}: ${tx}`);
   }
   return resp.json();
 }
@@ -139,7 +125,7 @@ async function loadAddresses(){
     } else {
       let html='<ul>';
       for(const a of arr){
-        html+=`<li>${a.address} ${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
+        html+=`<li>${a.address} ${a.lat&&a.lon?'(lat/lon ok)':'(No lat/lon)'}
           <form method="post" action="/api/delete-address" style="display:inline;">
             <input type="hidden" name="addressId" value="${a.id}">
             <button type="submit" style="margin-left:10px;">Delete</button>
@@ -149,7 +135,7 @@ async function loadAddresses(){
       html+='</ul>';
       addressesList.innerHTML=html;
     }
-  } catch(e){
+  }catch(e){
     addressesList.innerText='Error: '+e;
   }
 }
@@ -163,7 +149,7 @@ async function loadReport(){
     } else {
       reportArea.innerHTML=data.html || 'No report.';
     }
-  } catch(e){
+  }catch(e){
     reportArea.innerText='Error: '+e;
   }
 }
@@ -177,9 +163,9 @@ async function updateNow(){
     if(data.error){
       reportArea.innerText='Error: '+data.error;
     } else {
-      reportArea.innerHTML=data.html||'No report.';
+      reportArea.innerHTML=data.html || 'No report.';
     }
-  }catch(e){
+  } catch(e){
     hideLoading();
     reportArea.innerText='Error: '+e;
   }
@@ -194,8 +180,8 @@ document.getElementById('aqiRadiusForm').addEventListener('submit', async e=>{
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({radius:val})
     });
-    alert('AQI distance updated.');
-  }catch(err){
+    alert('AQI distance updated');
+  } catch(err){
     alert('Error updating distance: '+err);
   }
 });
@@ -210,8 +196,8 @@ document.getElementById('dailyTimeForm').addEventListener('submit', async e=>{
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({hour, minute})
     });
-    alert('Daily report time updated.');
-  }catch(err){
+    alert('Daily report time updated');
+  } catch(err){
     alert('Error updating daily time: '+err);
   }
 });
@@ -222,7 +208,6 @@ function updateCountdowns(){
   nextHour.setHours(now.getHours()+1,0,0,0);
   const hourlyMs=nextHour-now;
 
-  // naive daily approach
   const nextDaily=new Date(now);
   nextDaily.setHours(8,0,0,0);
   if(nextDaily<=now) nextDaily.setDate(nextDaily.getDate()+1);
@@ -243,7 +228,6 @@ updateCountdowns();
 
 updateBtn.addEventListener('click', updateNow);
 
-// on load
 loadAddresses();
 loadReport();
 </script>
