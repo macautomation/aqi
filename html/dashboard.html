@@ -12,7 +12,6 @@
     #reportArea { margin:10px 0; }
     .loadingGif { width:50px; display:block; margin:10px auto; }
     .btn { padding:10px; margin-top:10px; cursor:pointer; }
-    /* Table styles for station data */
     table.station-table {
       width: 100%;
       border-collapse: collapse;
@@ -27,6 +26,8 @@
     table.station-table th {
       background-color: #f0f0f0;
     }
+    details { margin: 5px 0; padding: 5px; background: #fafafa; }
+    details summary { cursor: pointer; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -79,7 +80,6 @@
     <hr>
     <h3>Add a new address (up to 3)</h3>
     <form method="post" action="/api/add-address">
-      <!-- ID must match "addressInput" for autocomplete -->
       <input type="text" id="addressInput" name="address" placeholder="Address to report on">
       <button type="submit">Add Address</button>
     </form>
@@ -106,17 +106,17 @@
 </div>
 
 <script>
-// Fetch helper: fetch JSON with error handling.
+// Simple fetch helper
 async function fetchJSON(url, opts) {
   const resp = await fetch(url, opts);
-  if (!resp.ok) {
-    if (resp.status === 401) {
+  if(!resp.ok) {
+    if(resp.status===401){
       alert('Not authenticated, redirecting to login...');
-      window.location = 'login.html';
+      window.location='login.html';
       return null;
     }
-    let text = await resp.text();
-    throw new Error(`HTTP ${resp.status} - ${text}`);
+    const t = await resp.text();
+    throw new Error(`HTTP ${resp.status} - ${t}`);
   }
   return resp.json();
 }
@@ -127,23 +127,22 @@ const loadingMsg = document.getElementById('loadingMsg');
 const updateBtn = document.getElementById('updateNowBtn');
 
 function showLoading() {
-  loadingMsg.style.display = 'block';
-  reportArea.innerHTML = '';
+  loadingMsg.style.display='block';
+  reportArea.innerHTML='';
 }
 function hideLoading() {
-  loadingMsg.style.display = 'none';
+  loadingMsg.style.display='none';
 }
 
-// Load user’s addresses
 async function loadAddresses() {
   try {
     const arr = await fetchJSON('/api/list-addresses');
-    if (!arr) return;
-    if (!arr.length) {
-      addressesList.innerText = 'No addresses. Please add one above.';
+    if(!arr) return;
+    if(!arr.length){
+      addressesList.innerText='No addresses. Please add one above.';
     } else {
-      let html = '<ul>';
-      for (const a of arr) {
+      let html='<ul>';
+      for(const a of arr){
         html += `<li>${a.address} ${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
           <form method="post" action="/api/delete-address" style="display:inline;">
             <input type="hidden" name="addressId" value="${a.id}">
@@ -151,117 +150,112 @@ async function loadAddresses() {
           </form>
         </li>`;
       }
-      html += '</ul>';
-      addressesList.innerHTML = html;
+      html+='</ul>';
+      addressesList.innerHTML=html;
     }
-  } catch (e) {
-    addressesList.innerText = 'Error: ' + e;
+  } catch(e){
+    addressesList.innerText='Error: '+e;
   }
 }
 
-// Load user’s current report.
 async function loadReport() {
   try {
-    const data = await fetchJSON('/api/myReport');
-    if (!data) return;
-    if (data.error) {
-      reportArea.innerText = 'Error: ' + data.error;
+    const data=await fetchJSON('/api/myReport');
+    if(!data) return;
+    if(data.error){
+      reportArea.innerText='Error: '+data.error;
     } else {
-      // We'll expect data.html if we built an HTML snippet, or fallback to data.report
-      reportArea.innerHTML = data.html || data.report || 'No report.';
+      // data.html => big HTML snippet
+      reportArea.innerHTML=data.html || 'No report.';
     }
-  } catch (e) {
-    reportArea.innerText = 'Error: ' + e;
+  } catch(e){
+    reportArea.innerText='Error: '+e;
   }
 }
 
-// Update now => calls /api/report-now
 async function updateNow() {
   showLoading();
   try {
-    const data = await fetchJSON('/api/report-now', { method: 'POST' });
+    const data = await fetchJSON('/api/report-now',{method:'POST'});
     hideLoading();
-    if (!data) return;
-    if (data.error) {
-      reportArea.innerText = 'Error: ' + data.error;
+    if(!data) return;
+    if(data.error){
+      reportArea.innerText='Error: '+data.error;
     } else {
-      reportArea.innerHTML = data.html || data.report || 'No report.';
+      reportArea.innerHTML=data.html || 'No report.';
     }
-  } catch (e) {
+  } catch(e){
     hideLoading();
-    reportArea.innerText = 'Error: ' + e;
+    reportArea.innerText='Error: '+e;
   }
 }
 
 // Save the user’s chosen AQI radius
-document.getElementById('aqiRadiusForm').addEventListener('submit', async function(e) {
+document.getElementById('aqiRadiusForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const val = document.getElementById('aqiRadiusSelect').value;
   try {
-    await fetchJSON('/api/set-aqi-radius', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    await fetchJSON('/api/set-aqi-radius',{
+      method:'POST',
+      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ radius: val })
     });
     alert('AQI distance updated');
-  } catch(err) {
-    alert('Error updating distance: ' + err);
+  } catch(err){
+    alert('Error updating distance: '+err);
   }
 });
 
 // Save the user’s daily time preference
-document.getElementById('dailyTimeForm').addEventListener('submit', async function(e) {
+document.getElementById('dailyTimeForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const hour = document.getElementById('dailyHour').value;
   const minute = document.getElementById('dailyMinute').value;
   try {
-    await fetchJSON('/api/set-daily-time', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    await fetchJSON('/api/set-daily-time',{
+      method:'POST',
+      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ hour, minute })
     });
     alert('Daily report time updated');
-  } catch(err) {
-    alert('Error updating daily report time: ' + err);
+  } catch(err){
+    alert('Error updating daily report time: '+err);
   }
 });
 
-// Countdown timers for updates.
-function updateCountdowns() {
-  const now = new Date();
-  const nextHour = new Date(now);
-  nextHour.setHours(now.getHours() + 1, 0, 0, 0);
-  const hourlyMs = nextHour - now;
+// Countdown
+function updateCountdowns(){
+  const now=new Date();
+  const nextHour=new Date(now);
+  nextHour.setHours(now.getHours()+1,0,0,0);
+  const hourlyMs=nextHour - now;
 
-  // The daily time is user-specific. For a quick approach, we’ll do a naive 8 AM.
-  // A robust approach could fetch the user’s stored hour/minute and do real math.
+  // For daily, we do a naive 8 AM approach unless we fetch from server
   const nextDaily = new Date(now);
-  nextDaily.setHours(8, 0, 0, 0);
-  if (nextDaily <= now) nextDaily.setDate(nextDaily.getDate() + 1);
-  const dailyMs = nextDaily - now;
+  nextDaily.setHours(8,0,0,0);
+  if(nextDaily <= now) nextDaily.setDate(nextDaily.getDate()+1);
+  const dailyMs=nextDaily - now;
 
-  document.getElementById('hourlyCountdown').innerText = formatMs(hourlyMs);
-  document.getElementById('dailyCountdown').innerText = formatMs(dailyMs);
+  document.getElementById('hourlyCountdown').innerText=formatMs(hourlyMs);
+  document.getElementById('dailyCountdown').innerText=formatMs(dailyMs);
 }
-function formatMs(ms) {
-  const s = Math.floor(ms / 1000);
-  const hh = Math.floor(s / 3600);
-  const mm = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
+function formatMs(ms){
+  const s=Math.floor(ms/1000);
+  const hh=Math.floor(s/3600);
+  const mm=Math.floor((s%3600)/60);
+  const ss=s%60;
   return `${hh}h ${mm}m ${ss}s`;
 }
-setInterval(updateCountdowns, 1000);
+setInterval(updateCountdowns,1000);
 updateCountdowns();
 
 updateBtn.addEventListener('click', updateNow);
 
-// Initialize
 loadAddresses();
 loadReport();
 </script>
 
 <!-- Load autocomplete for the address input -->
 <script src="/js/autocomplete.js"></script>
-
 </body>
 </html>
