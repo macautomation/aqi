@@ -21,12 +21,12 @@
     table.station-table td {
       border: 1px solid #ccc;
       padding: 8px;
-      text-align: center;
+      text-align: left;
     }
     table.station-table th {
       background-color: #f0f0f0;
     }
-    details { margin: 5px 0; padding: 5px; background: #fafafa; }
+    details { margin: 4px 0; background: #f9f9f9; padding: 4px; }
     details summary { cursor: pointer; font-weight: bold; }
   </style>
 </head>
@@ -35,7 +35,6 @@
   <img src="../images/logo.png" alt="AQI Updates" class="logo">
   <h1>Your Dashboard</h1>
 
-  <!-- 1) Let user select the AQI measurement distance -->
   <div>
     <h3>Set Your AQI Measurement Distance</h3>
     <form id="aqiRadiusForm">
@@ -54,7 +53,6 @@
 
   <hr>
 
-  <!-- 2) Let user pick daily report time in 15-minute increments -->
   <div>
     <h3>Set Your Daily Report Time</h3>
     <form id="dailyTimeForm">
@@ -106,44 +104,42 @@
 </div>
 
 <script>
-// Simple fetch helper
-async function fetchJSON(url, opts) {
-  const resp = await fetch(url, opts);
-  if(!resp.ok) {
+async function fetchJSON(url, opts){
+  const resp=await fetch(url, opts);
+  if(!resp.ok){
     if(resp.status===401){
-      alert('Not authenticated, redirecting to login...');
+      alert('Not authenticated, going to login...');
       window.location='login.html';
       return null;
     }
-    const t = await resp.text();
-    throw new Error(`HTTP ${resp.status} - ${t}`);
+    const t=await resp.text();
+    throw new Error(`HTTP ${resp.status}: ${t}`);
   }
   return resp.json();
 }
+const addressesList=document.getElementById('addressesList');
+const reportArea=document.getElementById('reportArea');
+const loadingMsg=document.getElementById('loadingMsg');
+const updateBtn=document.getElementById('updateNowBtn');
 
-const addressesList = document.getElementById('addressesList');
-const reportArea = document.getElementById('reportArea');
-const loadingMsg = document.getElementById('loadingMsg');
-const updateBtn = document.getElementById('updateNowBtn');
-
-function showLoading() {
+function showLoading(){
   loadingMsg.style.display='block';
   reportArea.innerHTML='';
 }
-function hideLoading() {
+function hideLoading(){
   loadingMsg.style.display='none';
 }
 
-async function loadAddresses() {
-  try {
-    const arr = await fetchJSON('/api/list-addresses');
+async function loadAddresses(){
+  try{
+    const arr=await fetchJSON('/api/list-addresses');
     if(!arr) return;
     if(!arr.length){
       addressesList.innerText='No addresses. Please add one above.';
     } else {
       let html='<ul>';
       for(const a of arr){
-        html += `<li>${a.address} ${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
+        html+=`<li>${a.address} ${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
           <form method="post" action="/api/delete-address" style="display:inline;">
             <input type="hidden" name="addressId" value="${a.id}">
             <button type="submit" style="margin-left:10px;">Delete</button>
@@ -158,14 +154,13 @@ async function loadAddresses() {
   }
 }
 
-async function loadReport() {
-  try {
+async function loadReport(){
+  try{
     const data=await fetchJSON('/api/myReport');
     if(!data) return;
     if(data.error){
       reportArea.innerText='Error: '+data.error;
     } else {
-      // data.html => big HTML snippet
       reportArea.innerHTML=data.html || 'No report.';
     }
   } catch(e){
@@ -173,68 +168,65 @@ async function loadReport() {
   }
 }
 
-async function updateNow() {
+async function updateNow(){
   showLoading();
-  try {
-    const data = await fetchJSON('/api/report-now',{method:'POST'});
+  try{
+    const data=await fetchJSON('/api/report-now',{method:'POST'});
     hideLoading();
     if(!data) return;
     if(data.error){
       reportArea.innerText='Error: '+data.error;
     } else {
-      reportArea.innerHTML=data.html || 'No report.';
+      reportArea.innerHTML=data.html||'No report.';
     }
-  } catch(e){
+  }catch(e){
     hideLoading();
     reportArea.innerText='Error: '+e;
   }
 }
 
-// Save the user’s chosen AQI radius
 document.getElementById('aqiRadiusForm').addEventListener('submit', async e=>{
   e.preventDefault();
-  const val = document.getElementById('aqiRadiusSelect').value;
-  try {
+  const val=document.getElementById('aqiRadiusSelect').value;
+  try{
     await fetchJSON('/api/set-aqi-radius',{
       method:'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ radius: val })
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({radius:val})
     });
-    alert('AQI distance updated');
-  } catch(err){
+    alert('AQI distance updated.');
+  }catch(err){
     alert('Error updating distance: '+err);
   }
 });
 
-// Save the user’s daily time preference
 document.getElementById('dailyTimeForm').addEventListener('submit', async e=>{
   e.preventDefault();
-  const hour = document.getElementById('dailyHour').value;
-  const minute = document.getElementById('dailyMinute').value;
-  try {
+  const hour=document.getElementById('dailyHour').value;
+  const minute=document.getElementById('dailyMinute').value;
+  try{
     await fetchJSON('/api/set-daily-time',{
       method:'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ hour, minute })
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({hour, minute})
     });
-    alert('Daily report time updated');
-  } catch(err){
-    alert('Error updating daily report time: '+err);
+    alert('Daily report time updated.');
+  }catch(err){
+    alert('Error updating daily time: '+err);
   }
 });
 
-// Countdown
 function updateCountdowns(){
   const now=new Date();
   const nextHour=new Date(now);
   nextHour.setHours(now.getHours()+1,0,0,0);
-  const hourlyMs=nextHour - now;
+  const hourlyMs=nextHour-now;
 
-  // For daily, we do a naive 8 AM approach unless we fetch from server
-  const nextDaily = new Date(now);
+  // naive daily approach
+  const nextDaily=new Date(now);
   nextDaily.setHours(8,0,0,0);
-  if(nextDaily <= now) nextDaily.setDate(nextDaily.getDate()+1);
-  const dailyMs=nextDaily - now;
+  if(nextDaily<=now) nextDaily.setDate(nextDaily.getDate()+1);
+  const dailyMs=nextDaily-now;
 
   document.getElementById('hourlyCountdown').innerText=formatMs(hourlyMs);
   document.getElementById('dailyCountdown').innerText=formatMs(dailyMs);
@@ -251,11 +243,10 @@ updateCountdowns();
 
 updateBtn.addEventListener('click', updateNow);
 
+// on load
 loadAddresses();
 loadReport();
 </script>
-
-<!-- Load autocomplete for the address input -->
 <script src="/js/autocomplete.js"></script>
 </body>
 </html>
