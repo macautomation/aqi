@@ -46,18 +46,15 @@ export async function initDB() {
       );
     `);
 
-    // Create a table for storing hourly data for each user address,
-    // to compute daily averages, etc.
+    // We'll store everything in a JSON column for flexible logging
     await client.query(`
       CREATE TABLE IF NOT EXISTS address_hourly_data (
         id SERIAL PRIMARY KEY,
         user_id INT REFERENCES users(id),
         address_id INT REFERENCES user_addresses(id),
         timestamp TIMESTAMP NOT NULL,
-        source VARCHAR(50) NOT NULL,   -- e.g. 'AirNow', 'PurpleAir'
-        aqi_closest INT,
-        aqi_average INT,
-        UNIQUE (user_id, address_id, timestamp, source)
+        data JSONB,            -- all data: AirNow, PurpleAir, OpenWeather, debug, etc.
+        UNIQUE (user_id, address_id, timestamp)
       );
     `);
 
