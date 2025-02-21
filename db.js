@@ -10,7 +10,7 @@ const pool = new Pool({
 export async function initDB() {
   const client = await pool.connect();
   try {
-    // Create 'users' if you haven't already:
+    // Create 'users' if not exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -34,8 +34,7 @@ export async function initDB() {
       );
     `);
 
-    // Create a separate table for addresses
-    // Each user can have up to 3 addresses
+    // Create user_addresses if not exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_addresses (
         id SERIAL PRIMARY KEY,
@@ -46,14 +45,14 @@ export async function initDB() {
       );
     `);
 
-    // Create a table for storing hourly data for each user address.
+    // Create address_hourly_data if not exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS address_hourly_data (
         id SERIAL PRIMARY KEY,
         user_id INT REFERENCES users(id),
         address_id INT REFERENCES user_addresses(id),
         timestamp TIMESTAMP NOT NULL,
-        source VARCHAR(50) NOT NULL,   -- 'AirNow', 'PurpleAir', or 'OpenWeather'
+        source VARCHAR(50) NOT NULL,  -- 'AirNow', 'PurpleAir', 'OpenWeather'
         aqi_closest INT,
         aqi_average INT,
         data_json JSONB,
