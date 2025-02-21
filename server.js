@@ -387,41 +387,203 @@ app.post('/api/report-now', ensureAuth, async(req,res)=>{
 });
 
 // Helper to fetch AirNow/PurpleAir data for a user’s addresses, storing in DB
-async function fetchAndStoreHourlyDataForUser(userId){
-  // Get user’s chosen radius
-  const userRows = await query('SELECT aqi_radius FROM users WHERE id=$1',[userId]);
-  if(!userRows.rows.length) return;
-  const radius = userRows.rows[0].aqi_radius || 5;
+/**
+ * fetchAndStoreHourlyDataForUser
+ * 
+ * For each address that has lat/lon, we:
+ * 1) Query AirNow for all PM2.5 sensors in a bounding box, filter by distance <= radius
+ * 2) Query PurpleAir for all PM2.5 sensors in a bounding box, filter by distance <= radius
+ * 3) Determine the single “closest” sensor’s AQI
+ * 4) Determine the average AQI among all sensors in range
+ * 5) Insert both results into address_hourly_data
+ */
+async function fetchAndStoreHourlyDataForUser(userId) {
+  // 1) Get user’s chosen radius (in miles)
+  const userRows = await query('SELECT aqi_radius FROM users WHERE id=$1', [userId]);
+  if (!userRows.rows.length) return;
+  const radiusMiles = userRows.rows[0].aqi_radius || 5;
 
-  // Fetch addresses
-  const addrRes = await query('SELECT * FROM user_addresses WHERE user_id=$1',[userId]);
-  for(const row of addrRes.rows){
-    if(!row.lat || !row.lon) continue;
+  // 2) Fetch addresses
+  const addrRes = await query('SELECT * FROM user_addresses WHERE user_id=$1', [userId]);
+  for (const row of addrRes.rows) {
+    if (!row.lat || !row.lon) continue;
 
-    // In real usage, you’d query the AirNow/PurpleAir APIs for all sensors in the bounding box
-    // that covers the given radius, then find:
-    //  - The single “closest” sensor reading
-    //  - The average reading of all sensors within that radius
-    // For demonstration, we’ll do placeholders:
+    // === A) AIRNOW data ===
+    const { closest: airNowClosest, average: airNowAvg } =
+      await fetchAirNowSensorsInRadius(row.lat, row.lon, radiusMiles);
 
-    const airNowClosest = await fetchAirNowAQI(row.lat, row.lon) || 0; // single call
-    const airNowAvg = Math.round(airNowClosest * 0.8); // placeholder
+    // === B) PURPLEAIR data ===
+    const { closest: purpleClosest, average: purpleAvg } =
+      await fetchPurpleAirSensorsInRadius(row.lat, row.lon, radiusMiles);
 
-    const purpleClosest = airNowClosest + 2; // placeholder
-    const purpleAvg = airNowClosest + 3;     // placeholder
-
+    // === C) Insert results into DB ===
     const now = new Date();
     await query(`
-      INSERT INTO address_hourly_data (user_id, address_id, timestamp, source, aqi_closest, aqi_average)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO address_hourly_data
+        (user_id, address_id, timestamp, source, aqi_closest, aqi_average)
+      VALUES ($1, $2, $3, 'AirNow', $4, $5)
       ON CONFLICT (user_id, address_id, timestamp, source) DO NOTHING
-    `,[ userId, row.id, now, 'AirNow', airNowClosest, airNowAvg ]);
+    `,[ userId, row.id, now, airNowClosest, airNowAvg ]);
 
     await query(`
-      INSERT INTO address_hourly_data (user_id, address_id, timestamp, source, aqi_closest, aqi_average)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO address_hourly_data
+        (user_id, address_id, timestamp, source, aqi_closest, aqi_average)
+      VALUES ($1, $2, $3, 'PurpleAir', $4, $5)
       ON CONFLICT (user_id, address_id, timestamp, source) DO NOTHING
-    `,[ userId, row.id, now, 'PurpleAir', purpleClosest, purpleAvg ]);
+    `,[ userId, row.id, now, purpleClosest, purpleAvg ]);
+  }
+}
+
+/**
+ * fetchAirNowSensorsInRadius
+ * Example: uses the AirNow “AQIData” endpoint to request all PM2.5 sensors
+ * in a bounding box around (lat, lon), then filters them by actual distance.
+ *
+ * Return { closest: <int or 0 if none>, average: <int or 0 if none> }
+ */
+async function fetchAirNowSensorsInRadius(lat, lon, radiusMiles) {
+  try {
+    // Construct a bounding box big enough for the largest radius
+    // ~0.15 degrees lat ~ 10 miles, but let's go a bit bigger to be safe
+    const latOffset = 0.2;
+    const lonOffset = 0.2;
+    const minLat = lat - latOffset;
+    const maxLat = lat + latOffset;
+    const minLon = lon - lonOffset;
+    const maxLon = lon + lonOffset;
+
+    // We’ll use the “/aq/data/” endpoint from AirNow
+    const url = 'https://www.airnowapi.org/aq/data/';
+    const hourStr = new Date().toISOString().slice(0,13); // e.g., 2025-02-20T16
+    const resp = await axios.get(url, {
+      params: {
+        startDate: hourStr,
+        endDate: hourStr,
+        parameters: 'pm25',
+        BBOX: `${minLon},${minLat},${maxLon},${maxLat}`,
+        dataType: 'A',
+        format: 'application/json',
+        verbose: 0,
+        API_KEY: process.env.AIRNOW_API_KEY
+      }
+    });
+
+    if (!Array.isArray(resp.data) || resp.data.length === 0) {
+      return { closest: 0, average: 0 };
+    }
+
+    // Filter the returned sensors by actual distance
+    let closestDist = Infinity;
+    let closestVal = null;
+    let sum = 0;
+    let count = 0;
+
+    for (const sensor of resp.data) {
+      // Each sensor object should contain .Latitude, .Longitude, .AQI
+      const sLat = sensor.Latitude;
+      const sLon = sensor.Longitude;
+      if (sLat == null || sLon == null) continue;
+      // distanceMiles is your helper function from utils.js
+      const dist = distanceMiles(lat, lon, sLat, sLon);
+
+      if (dist <= radiusMiles) {
+        // Contribute to average
+        sum += sensor.AQI;
+        count++;
+        // Check if it’s the closest
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestVal = sensor.AQI;
+        }
+      }
+    }
+
+    if (!count) {
+      // No sensors within radius
+      return { closest: 0, average: 0 };
+    }
+    const avg = Math.round(sum / count);
+    return {
+      closest: closestVal || 0,
+      average: avg
+    };
+  } catch (err) {
+    console.error('[fetchAirNowSensorsInRadius] error:', err.message);
+    return { closest: 0, average: 0 };
+  }
+}
+
+/**
+ * fetchPurpleAirSensorsInRadius
+ * Example: uses the PurpleAir API (v1/sensors) to request PM2.5 data
+ * in a bounding box around (lat, lon). Then we filter by distance <= radiusMiles,
+ * find the closest sensor, compute the average.
+ *
+ * Return { closest: <int>, average: <int> } (0 if none)
+ */
+async function fetchPurpleAirSensorsInRadius(lat, lon, radiusMiles) {
+  try {
+    const latOffset = 0.2;
+    const lonOffset = 0.2;
+    const minLat = lat - latOffset;
+    const maxLat = lat + latOffset;
+    const minLon = lon - lonOffset;
+    const maxLon = lon + lonOffset;
+
+    // PurpleAir API
+    // We’ll request pm2.5, lat, lon
+    const url = 'https://api.purpleair.com/v1/sensors';
+    const resp = await axios.get(url, {
+      headers: { 'X-API-Key': process.env.PURPLEAIR_API_KEY },
+      params: {
+        fields: 'pm2.5,latitude,longitude',
+        // bounding box
+        nwlng: minLon,
+        nwlat: maxLat,
+        selng: maxLon,
+        selat: minLat
+      }
+    });
+
+    if (!resp.data || !resp.data.data) {
+      return { closest: 0, average: 0 };
+    }
+
+    let closestDist = Infinity;
+    let closestVal = null;
+    let sum = 0;
+    let count = 0;
+
+    // resp.data.data is an array of sensor arrays, e.g. [id, pm25, lat, lon]
+    for (const sensor of resp.data.data) {
+      // sensor could be [<id>, <pm25>, <lat>, <lon>, ...]
+      const pm25 = sensor[1];
+      const sLat = sensor[2];
+      const sLon = sensor[3];
+
+      // distance check
+      const dist = distanceMiles(lat, lon, sLat, sLon);
+      if (dist <= radiusMiles) {
+        sum += pm25;
+        count++;
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestVal = pm25;
+        }
+      }
+    }
+
+    if (!count) {
+      return { closest: 0, average: 0 };
+    }
+    const avg = Math.round(sum / count);
+    return {
+      closest: Math.round(closestVal || 0),
+      average: avg
+    };
+  } catch (err) {
+    console.error('[fetchPurpleAirSensorsInRadius] error:', err.message);
+    return { closest: 0, average: 0 };
   }
 }
 
