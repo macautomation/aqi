@@ -57,6 +57,7 @@ function ensureAuth(req,res,next){
   return res.redirect('/html/login.html');
 }
 
+// Convert wind deg => cardinal
 function getCardinal(deg){
   if (deg == null) return 'Unknown';
   const dirs = ['N','NE','E','SE','S','SW','W','NW'];
@@ -64,7 +65,7 @@ function getCardinal(deg){
   return dirs[idx];
 }
 
-// ================== PurpleAir bounding-box initialization once ==================
+// ========== PurpleAir bounding-box initialization once ==========
 
 async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) {
   const addrRes=await query('SELECT * FROM user_addresses WHERE id=$1',[addressId]);
@@ -143,7 +144,6 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
   await query('UPDATE user_addresses SET purpleair_sensor_ids=$1 WHERE id=$2',[sensorIDs, addressId]);
 }
 
-// show_only approach
 async function fetchPurpleAirForAddress(addressRow){
   if(!addressRow.purpleair_sensor_ids){
     return { closest:0, average:0, debug:{ fallback:'No sensor IDs set' } };
@@ -182,7 +182,7 @@ async function fetchPurpleAirForAddress(addressRow){
   let closestDist=Infinity, sum=0, count=0, closestVal=0;
   const debugSensors=[];
   sensorDetails.forEach(s=>{
-    s.distMiles=distanceMiles(addressRow.lat, addressRow.lon, s.lat, s.lon);
+    s.distMiles=distanceMiles(addressRow.lat, addressRow.lon, s.lat,s.lon);
     s.aqi=pm25toAQI(s.pm2_5||0);
     debugSensors.push({
       sensorIndex:s.sensorIndex,
@@ -206,7 +206,7 @@ async function fetchPurpleAirForAddress(addressRow){
     }
   });
   if(!count){
-    return {closest:0, average:0, debug:{ showOnly, sensorCount:0, message:'All sensors filtered out' }};
+    return { closest:0, average:0, debug:{ showOnly, sensorCount:0, message:'All sensors filtered out' }};
   }
   const avg=Math.round(sum/count);
   return {
@@ -214,16 +214,16 @@ async function fetchPurpleAirForAddress(addressRow){
     average: avg,
     debug:{
       approach:'show_only',
-      sensorCount: count,
-      lat: addressRow.lat,
-      lon: addressRow.lon,
+      sensorCount:count,
+      lat:addressRow.lat,
+      lon:addressRow.lon,
       sensors: debugSensors,
       nearestDistance: closestDist
     }
   };
 }
 
-// ============= AirNow + OpenWeather =============
+// ========== AirNow + OpenWeather ==========
 
 async function fetchAirNowAQI(lat, lon, radiusMiles){
   const degOffset=1.0;
@@ -236,8 +236,8 @@ async function fetchAirNowAQI(lat, lon, radiusMiles){
   try{
     const resp=await axios.get(url,{
       params:{
-        startDate: hourStr,
-        endDate: hourStr,
+        startDate:hourStr,
+        endDate:hourStr,
         parameters:'pm25',
         BBOX:`${minLon},${minLat},${maxLon},${maxLat}`,
         dataType:'A',
@@ -309,7 +309,7 @@ async function fetchOpenWeather(lat, lon){
   }
 }
 
-// ============= 24hr average logic =============
+// ========== 24hr average logic ==========
 
 async function earliestTimestampForAddress(addressId, source){
   const res=await query(`
@@ -323,7 +323,7 @@ async function earliestTimestampForAddress(addressId, source){
 }
 function format24hrAvailable(earliest){
   if(!earliest) return 'No data yet';
-  const d=new Date(earliest.getTime()+24*3600*1000);
+  const d=new Date(earliest.getTime() + 24*3600*1000);
   return formatDayTimeForUser(d);
 }
 
@@ -346,7 +346,6 @@ async function updateTrailing24hAverages(userId, addressId, timestamp, source){
   const r24=Math.round(rows.rows[0].ravg||0);
   const count=Number(rows.rows[0].cnt)||0;
 
-  // find the row we just inserted
   const newRow=await query(`
     SELECT * FROM address_hourly_data
     WHERE user_id=$1
@@ -366,10 +365,8 @@ async function updateTrailing24hAverages(userId, addressId, timestamp, source){
     UPDATE address_hourly_data
     SET data_json=$1
     WHERE id=$2
-  `,[d, dbRow.id]);
+  `,[ d, dbRow.id ]);
 }
-
-// ============= fetchAndStoreHourlyDataForUser =============
 
 async function fetchAndStoreHourlyDataForUser(userId){
   const userRes=await query('SELECT aqi_radius FROM users WHERE id=$1',[userId]);
@@ -381,7 +378,6 @@ async function fetchAndStoreHourlyDataForUser(userId){
     FROM user_addresses
     WHERE user_id=$1
   `,[userId]);
-
   for(const adr of addrRes.rows){
     if(!adr.lat||!adr.lon) continue;
 
@@ -461,9 +457,7 @@ async function latestSourceRow(addressId, source){
   return rec.rows[0];
 }
 
-// ============= Cron Schedules =============
-
-// Hourly
+// Cron schedules
 cron.schedule('0 * * * *', async()=>{
   console.log('[CRON] hourly triggered');
   try{
@@ -475,8 +469,6 @@ cron.schedule('0 * * * *', async()=>{
     console.error('[CRON hourly]', e);
   }
 });
-
-// Daily check
 cron.schedule('*/15 * * * *', async()=>{
   console.log('[CRON] daily 15-min check');
   try{
@@ -568,8 +560,6 @@ async function buildDailyEmail(userId){
   return lines.join('\n');
 }
 
-// ============= Express static / routes =============
-
 app.use(express.static(__dirname));
 
 app.get('/', (req,res)=>{
@@ -577,7 +567,7 @@ app.get('/', (req,res)=>{
   res.sendFile(path.join(__dirname,'index.html'));
 });
 
-// Hide Google places key
+// Hide google places key
 app.get('/js/autocomplete.js',(req,res)=>{
   const key=process.env.GOOGLE_GEOCODE_KEY||'';
   const content=`
@@ -705,7 +695,7 @@ app.get('/api/list-addresses', ensureAuth, async(req,res)=>{
   }
 });
 
-// /api/myReport => use a table-based approach for each source, plus fancy debug pop-up
+// /api/myReport => table-based for each source
 app.get('/api/myReport', ensureAuth, async(req,res)=>{
   try{
     const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[req.user.id]);
@@ -889,7 +879,6 @@ app.post('/api/forgot', async(req,res)=>{
 app.post('/api/reset', async(req,res)=>{
   const {token,newPassword}=req.body;
   if(!token||!newPassword) return res.status(400).send('Missing token or newPassword');
-  // check complexity
   if(newPassword.length<8||!/[0-9]/.test(newPassword)||!/[A-Za-z]/.test(newPassword)||!/[^A-Za-z0-9]/.test(newPassword)){
     return res.status(400).send('New password not complex enough');
   }
