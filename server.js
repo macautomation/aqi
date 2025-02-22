@@ -57,17 +57,16 @@ function ensureAuth(req,res,next){
   return res.redirect('/html/login.html');
 }
 
-// Convert wind deg => cardinal
 function getCardinal(deg){
-  if (deg == null) return 'Unknown';
-  const dirs = ['N','NE','E','SE','S','SW','W','NW'];
-  const idx = Math.round(deg/45) % 8;
+  if (deg==null) return 'Unknown';
+  const dirs=['N','NE','E','SE','S','SW','W','NW'];
+  const idx=Math.round(deg/45)%8;
   return dirs[idx];
 }
 
-// ========== PurpleAir bounding-box initialization once ==========
+// ========== PurpleAir bounding-box init ==========
 
-async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) {
+async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles){
   const addrRes=await query('SELECT * FROM user_addresses WHERE id=$1',[addressId]);
   if(!addrRes.rows.length) return;
   const row=addrRes.rows[0];
@@ -81,10 +80,10 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
     attempts++;
     const latOffset=radiusMiles/69;
     const lonOffset=radiusMiles/69;
-    const minLat=row.lat - latOffset;
-    const maxLat=row.lat + latOffset;
-    const minLon=row.lon - lonOffset;
-    const maxLon=row.lon + lonOffset;
+    const minLat=row.lat-latOffset;
+    const maxLat=row.lat+latOffset;
+    const minLon=row.lon-lonOffset;
+    const maxLon=row.lon+lonOffset;
 
     const fields='sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0,pm2.5,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
     const resp=await axios.get('https://api.purpleair.com/v1/sensors',{
@@ -103,32 +102,32 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
 
     let sensorDetails=data.map(arr=>{
       return {
-        sensorIndex: arr[0],
-        lastSeen: arr[1],
-        lat: arr[2],
-        lon: arr[3],
-        uptime: arr[4],
-        confidence: arr[5],
-        voc: arr[6],
-        pm1_0: arr[7],
-        pm2_5: arr[8],
-        pm2_5_60m: arr[9],
-        pm2_5_alt: arr[10],
-        pm10_0: arr[11],
-        position_rating: arr[12],
-        ozone1: arr[13]
+        sensorIndex:arr[0],
+        lastSeen:arr[1],
+        lat:arr[2],
+        lon:arr[3],
+        uptime:arr[4],
+        confidence:arr[5],
+        voc:arr[6],
+        pm1_0:arr[7],
+        pm2_5:arr[8],
+        pm2_5_60m:arr[9],
+        pm2_5_alt:arr[10],
+        pm10_0:arr[11],
+        position_rating:arr[12],
+        ozone1:arr[13]
       };
     });
-    sensorDetails=sensorDetails.filter(s => (nowSec - s.lastSeen)<=3600);
+    sensorDetails=sensorDetails.filter(s=>(nowSec-s.lastSeen)<=3600);
     sensorDetails.forEach(s=>{
-      s.distMiles=distanceMiles(row.lat,row.lon,s.lat,s.lon);
+      s.distMiles=distanceMiles(row.lat,row.lon, s.lat,s.lon);
     });
     sensorDetails=sensorDetails.filter(s=>s.distMiles<=radiusMiles);
 
     if(sensorDetails.length){
       sensorDetails.sort((a,b)=>{
-        if(b.confidence!==a.confidence) return b.confidence - a.confidence;
-        return b.uptime - a.uptime;
+        if(b.confidence!==a.confidence) return b.confidence-a.confidence;
+        return b.uptime-a.uptime;
       });
       chosenSensors=sensorDetails.slice(0,10);
     } else {
@@ -144,6 +143,7 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
   await query('UPDATE user_addresses SET purpleair_sensor_ids=$1 WHERE id=$2',[sensorIDs, addressId]);
 }
 
+// show_only approach
 async function fetchPurpleAirForAddress(addressRow){
   if(!addressRow.purpleair_sensor_ids){
     return { closest:0, average:0, debug:{ fallback:'No sensor IDs set' } };
@@ -163,26 +163,26 @@ async function fetchPurpleAirForAddress(addressRow){
   }
   let sensorDetails=data.map(arr=>{
     return {
-      sensorIndex: arr[0],
-      lastSeen: arr[1],
-      lat: arr[2],
-      lon: arr[3],
-      uptime: arr[4],
-      confidence: arr[5],
-      voc: arr[6],
-      pm1_0: arr[7],
-      pm2_5: arr[8],
-      pm2_5_60m: arr[9],
-      pm2_5_alt: arr[10],
-      pm10_0: arr[11],
-      position_rating: arr[12],
-      ozone1: arr[13]
+      sensorIndex:arr[0],
+      lastSeen:arr[1],
+      lat:arr[2],
+      lon:arr[3],
+      uptime:arr[4],
+      confidence:arr[5],
+      voc:arr[6],
+      pm1_0:arr[7],
+      pm2_5:arr[8],
+      pm2_5_60m:arr[9],
+      pm2_5_alt:arr[10],
+      pm10_0:arr[11],
+      position_rating:arr[12],
+      ozone1:arr[13]
     };
   });
-  let closestDist=Infinity, sum=0, count=0, closestVal=0;
+  let closestDist=Infinity,sum=0,count=0,closestVal=0;
   const debugSensors=[];
   sensorDetails.forEach(s=>{
-    s.distMiles=distanceMiles(addressRow.lat, addressRow.lon, s.lat,s.lon);
+    s.distMiles=distanceMiles(addressRow.lat,addressRow.lon, s.lat,s.lon);
     s.aqi=pm25toAQI(s.pm2_5||0);
     debugSensors.push({
       sensorIndex:s.sensorIndex,
@@ -217,8 +217,8 @@ async function fetchPurpleAirForAddress(addressRow){
       sensorCount:count,
       lat:addressRow.lat,
       lon:addressRow.lon,
-      sensors: debugSensors,
-      nearestDistance: closestDist
+      sensors:debugSensors,
+      nearestDistance:closestDist
     }
   };
 }
@@ -239,7 +239,7 @@ async function fetchAirNowAQI(lat, lon, radiusMiles){
         startDate:hourStr,
         endDate:hourStr,
         parameters:'pm25',
-        BBOX:`${minLon},${minLat},${maxLon},${maxLat}`,
+        BBOX:`${minLon},${minLat},${maxLat},${maxLat}`,
         dataType:'A',
         format:'application/json',
         verbose:0,
@@ -251,7 +251,7 @@ async function fetchAirNowAQI(lat, lon, radiusMiles){
       return { closest:0, average:0, debug:debugInfo };
     }
     debugInfo.sensorCount=resp.data.length;
-    let sum=0, count=0, closestDist=Infinity, closestVal=0;
+    let sum=0,count=0,closestDist=Infinity,closestVal=0;
     const sensorDetails=[];
     for(const s of resp.data){
       const dist=distanceMiles(lat,lon,s.Latitude,s.Longitude);
@@ -300,7 +300,7 @@ async function fetchOpenWeather(lat, lon){
       humidity: main.humidity||0,
       windSpeed: wind.speed||0,
       windDeg: wind.deg||0,
-      windDir: getCardinal(wind.deg),
+      windDir:getCardinal(wind.deg),
       debug: debugInfo
     };
   } catch(err){
@@ -309,7 +309,7 @@ async function fetchOpenWeather(lat, lon){
   }
 }
 
-// ========== 24hr average logic ==========
+// ========== 24hr logic ==========
 
 async function earliestTimestampForAddress(addressId, source){
   const res=await query(`
@@ -323,7 +323,7 @@ async function earliestTimestampForAddress(addressId, source){
 }
 function format24hrAvailable(earliest){
   if(!earliest) return 'No data yet';
-  const d=new Date(earliest.getTime() + 24*3600*1000);
+  const d=new Date(earliest.getTime()+24*3600*1000);
   return formatDayTimeForUser(d);
 }
 
@@ -365,7 +365,7 @@ async function updateTrailing24hAverages(userId, addressId, timestamp, source){
     UPDATE address_hourly_data
     SET data_json=$1
     WHERE id=$2
-  `,[ d, dbRow.id ]);
+  `,[d, dbRow.id]);
 }
 
 async function fetchAndStoreHourlyDataForUser(userId){
@@ -495,7 +495,6 @@ cron.schedule('*/15 * * * *', async()=>{
   }
 });
 
-// buildDailyEmail => plain text
 async function buildDailyEmail(userId){
   const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[userId]);
   if(!addrRes.rows.length) return null;
@@ -560,14 +559,14 @@ async function buildDailyEmail(userId){
   return lines.join('\n');
 }
 
+// Express routes
 app.use(express.static(__dirname));
 
-app.get('/', (req,res)=>{
+app.get('/',(req,res)=>{
   if(req.isAuthenticated()) return res.redirect('/html/dashboard.html');
   res.sendFile(path.join(__dirname,'index.html'));
 });
 
-// Hide google places key
 app.get('/js/autocomplete.js',(req,res)=>{
   const key=process.env.GOOGLE_GEOCODE_KEY||'';
   const content=`
@@ -625,7 +624,7 @@ app.post('/api/signup', async(req,res)=>{
         VALUES($1,$2,$3,$4)
       `,[ newUserId, address.trim(), lat, lon ]);
     }
-    const dashLink = `${process.env.APP_URL||'http://localhost:3000'}/html/dashboard.html`;
+    const dashLink=`${process.env.APP_URL||'http://localhost:3000'}/html/dashboard.html`;
     await sendEmail(email,'Welcome to AQI Updates',`Thanks for signing up!\n${dashLink}\nEnjoy!`);
     res.redirect('/html/login.html');
   } catch(err){
@@ -634,7 +633,7 @@ app.post('/api/signup', async(req,res)=>{
   }
 });
 
-// ADD ADDRESS
+// ADD address
 app.post('/api/add-address', ensureAuth, async(req,res)=>{
   const { address }=req.body;
   if(!address) return res.status(400).send('No address provided');
@@ -659,7 +658,7 @@ app.post('/api/add-address', ensureAuth, async(req,res)=>{
   res.redirect('/html/dashboard.html');
 });
 
-// DELETE ADDRESS
+// DELETE address
 app.post('/api/delete-address', ensureAuth, async(req,res)=>{
   const { addressId }=req.body;
   if(!addressId) return res.status(400).send('No addressId');
@@ -695,7 +694,7 @@ app.get('/api/list-addresses', ensureAuth, async(req,res)=>{
   }
 });
 
-// /api/myReport => table-based for each source
+// /api/myReport => table-based approach for each source
 app.get('/api/myReport', ensureAuth, async(req,res)=>{
   try{
     const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[req.user.id]);
@@ -729,7 +728,8 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
         const c24Style=(typeof c24==='number')?getAQIColorStyle(c24):'';
         const r24Style=(typeof r24==='number')?getAQIColorStyle(r24):'';
 
-        const debugLink=buildDebugPopupLink(an.data_json?.debug||{}, 'AirNow Debug');
+        const debugObj=an.data_json?.debug||{};
+        const debugLink=JSON.stringify(buildDebugPopupHTML(debugObj,'AirNow Debug'));
         html+=`
           <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
             <thead>
@@ -738,7 +738,7 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
             <tbody>
               <tr><td>Current Closest AQI</td>
                   <td style="${cStyle}">${c} (${cat})
-                    <a href="#" onclick="showDetailPopup(\`${debugLink}\`, event);return false;">[details]</a>
+                    <a href="#" onclick="showDetailPopup(${debugLink}, event);return false;">[details]</a>
                   </td></tr>
               <tr><td>Current Radius Average</td>
                   <td style="${rStyle}">${r}</td></tr>
@@ -772,7 +772,8 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
         if(pa.data_json?.debug?.nearestDistance!==undefined){
           nearestLine=`<br>Nearest sensor is ${pa.data_json.debug.nearestDistance.toFixed(1)} miles away`;
         }
-        const debugLink=buildDebugPopupLink(pa.data_json?.debug||{}, 'PurpleAir Debug');
+        const debugObj=pa.data_json?.debug||{};
+        const debugLink=JSON.stringify(buildDebugPopupHTML(debugObj,'PurpleAir Debug'));
         html+=`
           <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
             <thead>
@@ -781,7 +782,7 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
             <tbody>
               <tr><td>Current Closest AQI</td>
                   <td style="${cStyle}">${c} (${cat})
-                    <a href="#" onclick="showDetailPopup(\`${debugLink}\`, event);return false;">[details]</a>
+                    <a href="#" onclick="showDetailPopup(${debugLink}, event);return false;">[details]</a>
                   </td></tr>
               <tr><td>Current Radius Average</td>
                   <td style="${rStyle}">${r}</td></tr>
@@ -803,7 +804,8 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
         let c24=(d.ow24hrTemp!==undefined)
           ? d.ow24hrTemp
           : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id,'OpenWeather'))}`;
-        const debugLink=buildDebugPopupLink(d.debug||{}, 'OpenWeather Debug');
+        const debugObj=d.debug||{};
+        const debugLink=JSON.stringify(buildDebugPopupHTML(debugObj,'OpenWeather Debug'));
 
         html+=`
           <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
@@ -813,7 +815,7 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
             <tbody>
               <tr><td>Current Hourly</td>
                   <td>Temp=${d.tempF||0}F, Wind=${d.windSpeed||0} mph from ${d.windDir||'??'} (${d.windDeg||0}°)
-                    <a href="#" onclick="showDetailPopup(\`${debugLink}\`, event);return false;">[details]</a>
+                    <a href="#" onclick="showDetailPopup(${debugLink}, event);return false;">[details]</a>
                   </td></tr>
               <tr><td>24hr Average</td>
                   <td>Temp=${c24}F (assuming we store that if desired)</td></tr>
@@ -831,14 +833,13 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
   }
 }
 
-function buildDebugPopupLink(debugObj, title){
+// Rebuild the debug data as HTML
+function buildDebugPopupHTML(debugObj, title){
   const raw=JSON.stringify(debugObj,null,2);
-  const safe=raw.replace(/`/g,'\\`');
-  const safeTitle=title.replace(/`/g,'\\`');
-  return `<h3>${safeTitle}</h3><pre>${safe}</pre>`;
+  return `<h3>${title}</h3><pre>${raw.replace(/`/g,'\\`')}</pre>`;
 }
 
-// /api/report-now => do a fetch for user => returns new data
+// /api/report-now => do a fetch
 app.post('/api/report-now', ensureAuth, async(req,res)=>{
   try{
     await fetchAndStoreHourlyDataForUser(req.user.id);
@@ -859,7 +860,6 @@ app.post('/api/forgot', async(req,res)=>{
   if(!email) return res.status(400).send('No email');
   const {rows}=await query('SELECT id FROM users WHERE email=$1',[email]);
   if(!rows.length){
-    // we just say "If found, we sent a link"
     return res.send('If found, a reset link is sent.');
   }
   const userId=rows[0].id;
