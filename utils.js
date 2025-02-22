@@ -69,7 +69,6 @@ export function pm25toAQI(pm){
 export function formatDayTimeForUser(d) {
   if(!d) return 'No date';
   const now = new Date();
-  // strip times
   const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dateDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const dayDiff = (dateDay - nowDay)/(1000*3600*24);
