@@ -35,7 +35,7 @@ export function getAQIColorStyle(aqi){
   return `color:${color}; font-weight:bold;`;
 }
 
-// 4) Official pm2.5 -> AQI breakpoints (2012 standard)
+// 4) Official pm2.5 -> AQI breakpoints
 const PM25_BREAKPOINTS = [
   { pmLow:0.0,    pmHigh:12.0,   aqiLow:0,   aqiHigh:50 },
   { pmLow:12.1,   pmHigh:35.4,   aqiLow:51,  aqiHigh:100 },
@@ -46,7 +46,7 @@ const PM25_BREAKPOINTS = [
 ];
 
 /**
- * Convert raw pm2.5 (µg/m³) to an approximate AQI using linear interpolation.
+ * Convert raw pm2.5 (µg/m³) => approximate AQI using linear interpolation
  */
 export function pm25toAQI(pm){
   let p = pm;
@@ -63,8 +63,8 @@ export function pm25toAQI(pm){
 }
 
 /**
- * Format a future date as "Today at 3:15pm" or "Tomorrow at 1:00am".
- * If it's more than 2 days in the future, we do e.g. "10/04 at 7:00pm".
+ * Format a future date as "Today at 3:15pm" or "Tomorrow at 1:00am"
+ * If >2 days in future => "MM/dd at HH:mm(am|pm)"
  */
 export function formatDayTimeForUser(d) {
   if(!d) return 'No date';
@@ -79,7 +79,6 @@ export function formatDayTimeForUser(d) {
   } else if(dayDiff<2) {
     dayStr='Tomorrow';
   } else {
-    // fallback => "MM/dd at ..."
     return `${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')} at ${formatHourMin(d)}`;
   }
   return `${dayStr} at ${formatHourMin(d)}`;
@@ -88,7 +87,7 @@ export function formatDayTimeForUser(d) {
 function formatHourMin(d) {
   let hh = d.getHours();
   const mm = d.getMinutes();
-  const ampm = hh>=12 ? 'pm':'am';
+  const ampm = hh>=12?'pm':'am';
   if(hh===0) hh=12;
   else if(hh>12) hh=hh-12;
   const mmStr=mm.toString().padStart(2,'0');
