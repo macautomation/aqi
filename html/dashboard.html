@@ -3,7 +3,7 @@
 <head>
   <title>Dashboard</title>
   <style>
-    body { font-family: Arial, sans-serif; margin:20px; background:#f8f8f8; }
+    body { font-family: Arial, sans-serif; margin:20px; background: #f8f8f8; }
     .container { max-width:600px; margin:0 auto; background:#fff; padding:20px; border-radius:4px; }
     h1 { text-align:center; }
     .logo { width:150px; display:block; margin:0 auto 10px; }
@@ -12,8 +12,20 @@
     #reportArea { margin:10px 0; }
     .loadingGif { width:50px; display:block; margin:10px auto; }
     .btn { padding:10px; margin-top:10px; cursor:pointer; }
-    details { margin:4px 0; background:#f9f9f9; padding:4px; }
-    details summary { cursor:pointer; font-weight:bold; }
+
+    /* popup styling */
+    #detailPopup {
+      display:none;
+      position:absolute;
+      background:#fff;
+      border:1px solid #333;
+      padding:10px;
+      z-index:9999;
+      max-width:300px;
+    }
+    #detailPopup h3 {
+      margin-top:0;
+    }
   </style>
 </head>
 <body>
@@ -21,6 +33,7 @@
   <img src="../images/logo.png" alt="AQI Updates" class="logo">
   <h1>Your Dashboard</h1>
 
+  <!-- 1) Let user select the AQI measurement distance -->
   <div>
     <h3>Set Your AQI Measurement Distance</h3>
     <form id="aqiRadiusForm">
@@ -39,6 +52,7 @@
 
   <hr>
 
+  <!-- 2) Let user pick daily report time in 15 minute increments -->
   <div>
     <h3>Set Your Daily Report Time</h3>
     <form id="dailyTimeForm">
@@ -64,6 +78,7 @@
     <hr>
     <h3>Add a new address (up to 3)</h3>
     <form method="post" action="/api/add-address">
+      <!-- ID must match "addressInput" for autocomplete -->
       <input type="text" id="addressInput" name="address" placeholder="Address to report on">
       <button type="submit">Add Address</button>
     </form>
@@ -89,20 +104,25 @@
   </p>
 </div>
 
+<!-- Our detail popup -->
+<div id="detailPopup"></div>
+
 <script>
+// Reusable fetch helper
 async function fetchJSON(url, opts){
-  const resp=await fetch(url, opts);
+  const resp = await fetch(url, opts);
   if(!resp.ok){
     if(resp.status===401){
-      alert('Not authenticated, redirecting to login...');
+      alert('Not authenticated, redirecting...');
       window.location='login.html';
       return null;
     }
-    const tx=await resp.text();
-    throw new Error(`HTTP ${resp.status}: ${tx}`);
+    let txt=await resp.text();
+    throw new Error(`HTTP ${resp.status} - ${txt}`);
   }
   return resp.json();
 }
+
 const addressesList=document.getElementById('addressesList');
 const reportArea=document.getElementById('reportArea');
 const loadingMsg=document.getElementById('loadingMsg');
@@ -116,6 +136,7 @@ function hideLoading(){
   loadingMsg.style.display='none';
 }
 
+// ========== Addresses
 async function loadAddresses(){
   try{
     const arr=await fetchJSON('/api/list-addresses');
@@ -135,11 +156,12 @@ async function loadAddresses(){
       html+='</ul>';
       addressesList.innerHTML=html;
     }
-  }catch(e){
+  } catch(e){
     addressesList.innerText='Error: '+e;
   }
 }
 
+// ========== Report
 async function loadReport(){
   try{
     const data=await fetchJSON('/api/myReport');
@@ -147,13 +169,12 @@ async function loadReport(){
     if(data.error){
       reportArea.innerText='Error: '+data.error;
     } else {
-      reportArea.innerHTML=data.html || 'No report.';
+      reportArea.innerHTML=data.html||'No report.';
     }
-  }catch(e){
+  } catch(e){
     reportArea.innerText='Error: '+e;
   }
 }
-
 async function updateNow(){
   showLoading();
   try{
@@ -163,7 +184,7 @@ async function updateNow(){
     if(data.error){
       reportArea.innerText='Error: '+data.error;
     } else {
-      reportArea.innerHTML=data.html || 'No report.';
+      reportArea.innerHTML=data.html||'No report.';
     }
   } catch(e){
     hideLoading();
@@ -171,6 +192,7 @@ async function updateNow(){
   }
 }
 
+// ========== Set radius
 document.getElementById('aqiRadiusForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const val=document.getElementById('aqiRadiusSelect').value;
@@ -181,11 +203,12 @@ document.getElementById('aqiRadiusForm').addEventListener('submit', async e=>{
       body:JSON.stringify({radius:val})
     });
     alert('AQI distance updated');
-  } catch(err){
+  }catch(err){
     alert('Error updating distance: '+err);
   }
 });
 
+// ========== Set daily time
 document.getElementById('dailyTimeForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const hour=document.getElementById('dailyHour').value;
@@ -202,12 +225,14 @@ document.getElementById('dailyTimeForm').addEventListener('submit', async e=>{
   }
 });
 
+// ========== countdown
 function updateCountdowns(){
   const now=new Date();
   const nextHour=new Date(now);
   nextHour.setHours(now.getHours()+1,0,0,0);
   const hourlyMs=nextHour-now;
 
+  // naive daily at 8am
   const nextDaily=new Date(now);
   nextDaily.setHours(8,0,0,0);
   if(nextDaily<=now) nextDaily.setDate(nextDaily.getDate()+1);
@@ -228,9 +253,28 @@ updateCountdowns();
 
 updateBtn.addEventListener('click', updateNow);
 
+// on load
 loadAddresses();
 loadReport();
+
+// ========== Fancy pop-up for debug or additional data
+function showDetailPopup(html, event){
+  const popup=document.getElementById('detailPopup');
+  popup.innerHTML=html + `<p><button onclick="hideDetailPopup()">Close</button></p>`;
+  popup.style.display='block';
+  const x=event.pageX+10;
+  const y=event.pageY+10;
+  popup.style.left=x+'px';
+  popup.style.top=y+'px';
+}
+function hideDetailPopup(){
+  const popup=document.getElementById('detailPopup');
+  popup.style.display='none';
+  popup.innerHTML='';
+}
 </script>
+
+<!-- Our google places for address -->
 <script src="/js/autocomplete.js"></script>
 </body>
 </html>
