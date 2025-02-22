@@ -13,7 +13,7 @@
     .loadingGif { width:50px; display:block; margin:10px auto; }
     .btn { padding:10px; margin-top:10px; cursor:pointer; }
 
-    /* popup styling */
+    /* pop-up debug or additional data */
     #detailPopup {
       display:none;
       position:absolute;
@@ -33,7 +33,6 @@
   <img src="../images/logo.png" alt="AQI Updates" class="logo">
   <h1>Your Dashboard</h1>
 
-  <!-- 1) Let user select the AQI measurement distance -->
   <div>
     <h3>Set Your AQI Measurement Distance</h3>
     <form id="aqiRadiusForm">
@@ -52,7 +51,6 @@
 
   <hr>
 
-  <!-- 2) Let user pick daily report time in 15-minute increments -->
   <div>
     <h3>Set Your Daily Report Time</h3>
     <form id="dailyTimeForm">
@@ -107,21 +105,19 @@
 <div id="detailPopup"></div>
 
 <script>
-// Reusable fetch helper
 async function fetchJSON(url, opts){
-  const resp = await fetch(url, opts);
+  const resp=await fetch(url, opts);
   if(!resp.ok){
     if(resp.status===401){
       alert('Not authenticated, redirecting to login...');
       window.location='login.html';
       return null;
     }
-    let txt=await resp.text();
+    const txt=await resp.text();
     throw new Error(`HTTP ${resp.status} - ${txt}`);
   }
   return resp.json();
 }
-
 const addressesList=document.getElementById('addressesList');
 const reportArea=document.getElementById('reportArea');
 const loadingMsg=document.getElementById('loadingMsg');
@@ -135,7 +131,6 @@ function hideLoading(){
   loadingMsg.style.display='none';
 }
 
-// ========== Addresses
 async function loadAddresses(){
   try{
     const arr=await fetchJSON('/api/list-addresses');
@@ -159,8 +154,6 @@ async function loadAddresses(){
     addressesList.innerText='Error: '+e;
   }
 }
-
-// ========== Report
 async function loadReport(){
   try{
     const data=await fetchJSON('/api/myReport');
@@ -168,7 +161,7 @@ async function loadReport(){
     if(data.error){
       reportArea.innerText='Error: '+data.error;
     } else {
-      reportArea.innerHTML=data.html||'No report.';
+      reportArea.innerHTML=data.html || 'No report.';
     }
   } catch(e){
     reportArea.innerText='Error: '+e;
@@ -183,15 +176,14 @@ async function updateNow(){
     if(data.error){
       reportArea.innerText='Error: '+data.error;
     } else {
-      reportArea.innerHTML=data.html||'No report.';
+      reportArea.innerHTML=data.html || 'No report.';
     }
   } catch(e){
     hideLoading();
     reportArea.innerText='Error: '+e;
   }
 }
-
-// ========== Set radius
+// set radius
 document.getElementById('aqiRadiusForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const val=document.getElementById('aqiRadiusSelect').value;
@@ -202,12 +194,11 @@ document.getElementById('aqiRadiusForm').addEventListener('submit', async e=>{
       body:JSON.stringify({radius:val})
     });
     alert('AQI distance updated.');
-  }catch(err){
+  } catch(err){
     alert('Error updating distance: '+err);
   }
 });
-
-// ========== Set daily time
+// set daily time
 document.getElementById('dailyTimeForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const hour=document.getElementById('dailyHour').value;
@@ -216,7 +207,7 @@ document.getElementById('dailyTimeForm').addEventListener('submit', async e=>{
     await fetchJSON('/api/set-daily-time',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({hour, minute})
+      body:JSON.stringify({hour,minute})
     });
     alert('Daily report time updated.');
   } catch(err){
@@ -224,17 +215,17 @@ document.getElementById('dailyTimeForm').addEventListener('submit', async e=>{
   }
 });
 
-// ========== countdown
+// countdown
 function updateCountdowns(){
   const now=new Date();
   const nextHour=new Date(now);
   nextHour.setHours(now.getHours()+1,0,0,0);
-  const hourlyMs=nextHour-now;
+  const hourlyMs=nextHour - now;
 
   const nextDaily=new Date(now);
   nextDaily.setHours(8,0,0,0);
   if(nextDaily<=now) nextDaily.setDate(nextDaily.getDate()+1);
-  const dailyMs=nextDaily-now;
+  const dailyMs=nextDaily - now;
 
   document.getElementById('hourlyCountdown').innerText=formatMs(hourlyMs);
   document.getElementById('dailyCountdown').innerText=formatMs(dailyMs);
@@ -251,11 +242,10 @@ updateCountdowns();
 
 updateBtn.addEventListener('click', updateNow);
 
-// on load
 loadAddresses();
 loadReport();
 
-// ========== Fancy pop-up for debug or additional data
+// fancy pop-up for debug or additional data
 function showDetailPopup(html, event){
   const popup=document.getElementById('detailPopup');
   popup.innerHTML=html + `<p><button onclick="hideDetailPopup()">Close</button></p>`;
@@ -271,8 +261,6 @@ function hideDetailPopup(){
   popup.innerHTML='';
 }
 </script>
-
-<!-- Our google places for address -->
 <script src="/js/autocomplete.js"></script>
 </body>
 </html>
