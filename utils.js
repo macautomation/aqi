@@ -26,12 +26,12 @@ export function colorCodeAQI(aqi){
 export function getAQIColorStyle(aqi){
   const val = Number(aqi)||0;
   let color='#000'; 
-  if(val<=50) color='#009966';
-  else if(val<=100) color='#ffde33';
-  else if(val<=150) color='#ff9933';
-  else if(val<=200) color='#cc0033';
-  else if(val<=300) color='#660099';
-  else color='#7e0023';
+  if(val<=50) color='#009966';       // green
+  else if(val<=100) color='#ffde33'; // yellow
+  else if(val<=150) color='#ff9933'; // orange
+  else if(val<=200) color='#cc0033'; // red
+  else if(val<=300) color='#660099'; // purple
+  else color='#7e0023';              // maroon
   return `color:${color}; font-weight:bold;`;
 }
 
@@ -67,6 +67,7 @@ export function pm25toAQI(pm){
  * If it's more than 2 days in the future, we do e.g. "10/04 at 7:00pm".
  */
 export function formatDayTimeForUser(d) {
+  if(!d) return 'No date';
   const now = new Date();
   // strip times
   const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
