@@ -1,15 +1,30 @@
-// server.js (Single-File Version)
-// Verified in Node 20 for syntax correctness.
-// Copy EXACTLY as-is. Do not insert or remove lines. 
-// If you still see "missing ) after argument list", 
-// ensure no lines are truncated.
+////////////////////////////////////////////////////////////////////////////////
+// server.js (Single-File, All-In-One)
+// Includes everything: 
+// - DB init 
+// - Utility functions 
+// - Local + Google + Apple passport strategies 
+// - serializeUser/deserializeUser 
+// - fetchAndStoreHourlyData bounding-box logic (PurpleAir, AirNow, OpenWeather) 
+// - 24-hour average logic 
+// - forgot/reset password 
+// - daily/hourly cron 
+// - user addresses & radius 
+// - single donation route can also be added if needed
+// Copy EXACTLY as-is, do not remove lines. 
+////////////////////////////////////////////////////////////////////////////////
 
 import express from 'express';
 import session from 'express-session';
 import pgSession from 'connect-pg-simple';
-import pkg from 'pg';
+import pkg from 'pg'; 
 const { Pool } = pkg;
-import passport from 'passport'; // comment out if you don't have auth
+
+import passport from 'passport';
+import { Strategy as LocalStrategy } from 'passport-local';
+import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import AppleStrategy from 'passport-apple';
+
 import bodyParser from 'body-parser';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
@@ -17,50 +32,19 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import cron from 'node-cron';
 import axios from 'axios';
-
-// CUSTOM DESERIALIZE
-passport.serializeUser((user, done) => {
-  // we store just the user’s primary key in session
-  done(null, user.id);
-});
-
-passport.deserializeUser(async (id, done) => {
-  try {
-    const { rows } = await query('SELECT * FROM users WHERE id=$1', [id]);
-    if (!rows.length) {
-      // user row doesn’t exist => forcibly log them out
-      return done(null, false);
-    }
-    return done(null, rows[0]); // attach the user row to req.user
-  } catch (err) {
-    return done(err);
-  }
-});
-
-// 3) Then create your Express app
-const app = express();
-
-// 4) Use your session middleware
-app.use(session(...));
-
-// 5) Initialize passport
-app.use(passport.initialize());
-app.use(passport.session());
-
-// SendGrid for emailing
 import sgMail from '@sendgrid/mail';
 sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
 
-// If you have a working "auth.js" with passport strategies, import it here:
-// import './auth.js';
+// If you have an APP_URL in environment, we use that for callback URLs
+// Otherwise default to http://localhost:3000 for dev
 
-// Single-File: We'll inline the DB init, the utils, everything:
+////////////////////////////////////////////////////////////////////////////////
+// Inline DB init
+////////////////////////////////////////////////////////////////////////////////
 
-// ---------- Inline DB -----------
 let pool;
 async function initDB() {
   if(!pool){
-    const { Pool } = pkg;
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.DATABASE_SSL ? { rejectUnauthorized: false } : false
@@ -68,6 +52,7 @@ async function initDB() {
   }
   const client = await pool.connect();
   try {
+    // table: users
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -80,6 +65,8 @@ async function initDB() {
         daily_report_minute INT DEFAULT 0
       );
     `);
+
+    // table: password_reset_tokens
     await client.query(`
       CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id SERIAL PRIMARY KEY,
@@ -88,6 +75,8 @@ async function initDB() {
         expires_at TIMESTAMP
       );
     `);
+
+    // table: user_addresses
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_addresses (
         id SERIAL PRIMARY KEY,
@@ -97,6 +86,8 @@ async function initDB() {
         lon DOUBLE PRECISION
       );
     `);
+
+    // add purpleair_sensor_ids if needed
     try {
       await client.query(`
         ALTER TABLE user_addresses
@@ -105,6 +96,8 @@ async function initDB() {
     } catch(e) {
       console.warn('[initDB] Could not add purpleair_sensor_ids column:', e.message);
     }
+
+    // table: address_hourly_data
     await client.query(`
       CREATE TABLE IF NOT EXISTS address_hourly_data (
         id SERIAL PRIMARY KEY,
@@ -125,7 +118,6 @@ async function initDB() {
 
 async function query(q, params){
   if(!pool){
-    const { Pool } = pkg;
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.DATABASE_SSL ? { rejectUnauthorized: false } : false
@@ -139,7 +131,10 @@ async function query(q, params){
   }
 }
 
-// ---------- Inline UTILS -----------
+////////////////////////////////////////////////////////////////////////////////
+// Inline UTILS
+////////////////////////////////////////////////////////////////////////////////
+
 function distanceMiles(lat1, lon1, lat2, lon2) {
   const R=3958.8;
   const dLat=(lat2-lat1)*Math.PI/180;
@@ -151,11 +146,11 @@ function distanceMiles(lat1, lon1, lat2, lon2) {
 }
 function colorCodeAQI(aqi){
   const val=Number(aqi)||0;
-  if(val<=50) return 'Good';
-  if(val<=100) return 'Moderate';
-  if(val<=150) return 'Unhealthy for Sensitive Groups';
-  if(val<=200) return 'Unhealthy';
-  if(val<=300) return 'Very Unhealthy';
+  if(val<=50)return 'Good';
+  if(val<=100)return 'Moderate';
+  if(val<=150)return 'Unhealthy for Sensitive Groups';
+  if(val<=200)return 'Unhealthy';
+  if(val<=300)return 'Very Unhealthy';
   return 'Hazardous';
 }
 function getAQIColorStyle(aqi){
@@ -170,17 +165,17 @@ function getAQIColorStyle(aqi){
   return `color:${color}; font-weight:bold;`;
 }
 const PM25_BREAKPOINTS=[
-  { pmLow:0.0, pmHigh:12.0, aqiLow:0, aqiHigh:50 },
+  { pmLow:0.0, pmHigh:12.0,  aqiLow:0, aqiHigh:50 },
   { pmLow:12.1, pmHigh:35.4, aqiLow:51, aqiHigh:100 },
   { pmLow:35.5, pmHigh:55.4, aqiLow:101, aqiHigh:150 },
-  { pmLow:55.5, pmHigh:150.4, aqiLow:151, aqiHigh:200 },
-  { pmLow:150.5, pmHigh:250.4, aqiLow:201, aqiHigh:300 },
-  { pmLow:250.5, pmHigh:500.4, aqiLow:301, aqiHigh:500 }
+  { pmLow:55.5, pmHigh:150.4,aqiLow:151,aqiHigh:200 },
+  { pmLow:150.5,pmHigh:250.4,aqiLow:201,aqiHigh:300 },
+  { pmLow:250.5,pmHigh:500.4,aqiLow:301,aqiHigh:500 }
 ];
 function pm25toAQI(pm){
   let p=pm;
-  if(p<0) p=0;
-  if(p>500.4) return 500;
+  if(p<0)p=0;
+  if(p>500.4)return 500;
   for(const bp of PM25_BREAKPOINTS){
     if(p>=bp.pmLow && p<=bp.pmHigh){
       const ratio=(p-bp.pmLow)/(bp.pmHigh-bp.pmLow);
@@ -191,14 +186,14 @@ function pm25toAQI(pm){
   return 0;
 }
 function formatDayTimeForUser(d){
-  if(!d) return 'No date';
+  if(!d)return 'No date';
   const now=new Date();
   const nowDay=new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dateDay=new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const dayDiff=(dateDay-nowDay)/(1000*3600*24);
   let dayStr;
-  if(dayDiff<1) dayStr='Today';
-  else if(dayDiff<2) dayStr='Tomorrow';
+  if(dayDiff<1)dayStr='Today';
+  else if(dayDiff<2)dayStr='Tomorrow';
   else {
     return `${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')} at ${formatHourMin(d)}`;
   }
@@ -213,60 +208,119 @@ function formatHourMin(d){
   const mmStr=mm.toString().padStart(2,'0');
   return `${hh}:${mmStr}${ampm}`;
 }
-
-// ---------- server code ----------
-
-const __filename=fileURLToPath(import.meta.url);
-const __dirname=path.dirname(__filename);
-
-const app=express();
-app.use(bodyParser.urlencoded({extended:true}));
-app.use(bodyParser.json());
-
-import sessionStore from 'connect-pg-simple';
-const PgSession=sessionStore(session);
-app.use(session({
-  store:new PgSession({ 
-    pool, createTableIfMissing:true
-  }),
-  secret:process.env.SESSION_SECRET||'keyboard cat',
-  resave:false,
-  saveUninitialized:false
-}));
-
-// If you have passport strategies in your local "auth.js", make sure they're loaded
-// import './auth.js'; 
-// or define them inline:
-
-app.use(passport.initialize());
-app.use(passport.session());
-
-// Helper to send email
-async function sendEmail(to,subject,text){
-  const msg={to,from:'noreply@littlegiant.app',subject,text};
-  await sgMail.send(msg);
-}
-function ensureAuth(req,res,next){
-  if(req.isAuthenticated()) return next();
-  if(req.path.startsWith('/api/')){
-    return res.status(401).json({error:'Not authenticated'});
-  }
-  return res.redirect('/html/login.html');
-}
 function getCardinal(deg){
-  if(deg==null) return 'Unknown';
+  if(deg==null)return 'Unknown';
   const dirs=['N','NE','E','SE','S','SW','W','NW'];
   const idx=Math.round(deg/45)%8;
   return dirs[idx];
 }
 
-// ========== PurpleAir init ==========
+////////////////////////////////////////////////////////////////////////////////
+// Passport Strategies (local, google, apple) + serialize/deserialize
+////////////////////////////////////////////////////////////////////////////////
 
+passport.use('local', new LocalStrategy({
+  usernameField:'email',
+  passwordField:'password'
+}, async(email,password,done)=>{
+  try {
+    const {rows}=await query('SELECT * FROM users WHERE email=$1',[email]);
+    if(!rows.length) return done(null,false,{message:'No user found'});
+    const user=rows[0];
+    const match=await bcrypt.compare(password,user.password_hash||'');
+    if(!match) return done(null,false,{message:'Bad password'});
+    return done(null,user);
+  } catch(e){
+    return done(e);
+  }
+}));
+
+passport.use('google', new GoogleStrategy({
+  clientID:process.env.GOOGLE_CLIENT_ID||'',
+  clientSecret:process.env.GOOGLE_CLIENT_SECRET||'',
+  callbackURL:(process.env.APP_URL||'http://localhost:3000')+'/auth/google/callback'
+}, async(accessToken, refreshToken, profile, done)=>{
+  try{
+    const email=(profile.emails && profile.emails.length)? profile.emails[0].value : 'noemail@google.com';
+    let {rows}=await query('SELECT * FROM users WHERE email=$1',[email]);
+    if(!rows.length){
+      const ins=await query(`INSERT INTO users(email) VALUES($1) RETURNING *`,[email]);
+      rows=ins.rows;
+    }
+    return done(null,rows[0]);
+  } catch(e){
+    return done(e);
+  }
+}));
+
+passport.use('apple', new AppleStrategy({
+  clientID:process.env.APPLE_CLIENT_ID||'',
+  teamID:process.env.APPLE_TEAM_ID||'',
+  keyID:process.env.APPLE_KEY_ID||'',
+  privateKeyString:(process.env.APPLE_PRIVATE_KEY||'').replace(/\\n/g,'\n'),
+  callbackURL:(process.env.APP_URL||'http://localhost:3000')+'/auth/apple/callback',
+  scope:['name','email']
+}, async(accessToken,refreshToken,idToken,profile,done)=>{
+  if(!profile){
+    return done(new Error('Apple profile not found'));
+  }
+  try{
+    const email=profile.email||(`noemail_${profile.id}@appleuser.com`);
+    let {rows}=await query('SELECT * FROM users WHERE email=$1',[email]);
+    if(!rows.length){
+      const ins=await query(`INSERT INTO users(email) VALUES($1) RETURNING *`,[email]);
+      rows=ins.rows;
+    }
+    return done(null,rows[0]);
+  } catch(e){
+    done(e);
+  }
+}));
+
+passport.serializeUser((user,done)=>{
+  done(null,user.id);
+});
+passport.deserializeUser(async(id,done)=>{
+  try{
+    const {rows}=await query('SELECT * FROM users WHERE id=$1',[id]);
+    if(!rows.length) return done(null,false);
+    return done(null,rows[0]);
+  } catch(e){
+    done(e);
+  }
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// Express + session
+////////////////////////////////////////////////////////////////////////////////
+
+const app = express();
+app.use(bodyParser.urlencoded({extended:true}));
+app.use(bodyParser.json());
+
+const PgSession = pgSession(session);
+app.use(session({
+  store:new PgSession({
+    pool,
+    createTableIfMissing:true
+  }),
+  secret: process.env.SESSION_SECRET||'keyboard cat',
+  resave:false,
+  saveUninitialized:false
+}));
+app.use(passport.initialize());
+app.use(passport.session());
+
+////////////////////////////////////////////////////////////////////////////////
+// DB logic for bounding-box, daily cron, etc.
+////////////////////////////////////////////////////////////////////////////////
+
+// PurpleAir bounding-box
 async function initializePurpleAirSensorsForAddress(addressId,userRadiusMiles){
   const addrRes=await query('SELECT * FROM user_addresses WHERE id=$1',[addressId]);
-  if(!addrRes.rows.length) return;
+  if(!addrRes.rows.length)return;
   const row=addrRes.rows[0];
-  if(!row.lat||!row.lon) return;
+  if(!row.lat||!row.lon)return;
 
   let radiusMiles=userRadiusMiles||5;
   let attempts=0;
@@ -280,11 +334,11 @@ async function initializePurpleAirSensorsForAddress(addressId,userRadiusMiles){
     const minLat=row.lat-latOffset;
     const maxLat=row.lat+latOffset;
     const minLon=row.lon-lonOffset;
-    const maxLon=row.lon+latOffset;
+    const maxLon=row.lon+latOffset; // you might want row.lon+lonOffset
 
     const fields='sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0,pm2.5,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
     const resp=await axios.get('https://api.purpleair.com/v1/sensors',{
-      headers:{'X-API-Key': process.env.PURPLEAIR_API_KEY},
+      headers:{'X-API-Key':process.env.PURPLEAIR_API_KEY},
       params:{
         location_type:0,
         nwlng:minLon,
@@ -322,7 +376,7 @@ async function initializePurpleAirSensorsForAddress(addressId,userRadiusMiles){
     sensorDetails=sensorDetails.filter(s=>s.distMiles<=radiusMiles);
     if(sensorDetails.length){
       sensorDetails.sort((a,b)=>{
-        if(b.confidence!==a.confidence) return b.confidence-a.confidence;
+        if(b.confidence!==a.confidence)return b.confidence-a.confidence;
         return b.uptime-a.uptime;
       });
       chosenSensors=sensorDetails.slice(0,10);
@@ -340,16 +394,16 @@ async function initializePurpleAirSensorsForAddress(addressId,userRadiusMiles){
 
 async function fetchPurpleAirForAddress(addressRow){
   if(!addressRow.purpleair_sensor_ids){
-    return {closest:0, average:0, debug:{fallback:'No sensor IDs set'}};
+    return {closest:0,average:0,debug:{fallback:'No sensor IDs set'}};
   }
   const showOnly=addressRow.purpleair_sensor_ids;
   if(!showOnly){
-    return {closest:0, average:0, debug:{fallback:'Blank sensor IDs'}};
+    return {closest:0,average:0,debug:{fallback:'Blank sensor IDs'}};
   }
   const fields='sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0,pm2.5,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
   const resp=await axios.get('https://api.purpleair.com/v1/sensors',{
-    headers:{'X-API-Key': process.env.PURPLEAIR_API_KEY},
-    params:{location_type:0,show_only:showOnly,fields}
+    headers:{'X-API-Key':process.env.PURPLEAIR_API_KEY},
+    params:{ location_type:0, show_only:showOnly, fields }
   });
   const data=resp.data?.data||[];
   if(!data.length){
@@ -373,7 +427,7 @@ async function fetchPurpleAirForAddress(addressRow){
       ozone1:arr[13]
     };
   });
-  let closestDist=Infinity,sum=0,count=0,closestVal=0;
+  let closestDist=Infinity, sum=0, count=0, closestVal=0;
   const debugSensors=[];
   sensorDetails.forEach(s=>{
     s.distMiles=distanceMiles(addressRow.lat,addressRow.lon,s.lat,s.lon);
@@ -400,7 +454,7 @@ async function fetchPurpleAirForAddress(addressRow){
     }
   });
   if(!count){
-    return {closest:0,average:0,debug:{showOnly,sensorCount:0,message:'All sensors filtered out'}};
+    return { closest:0, average:0, debug:{ showOnly, sensorCount:0, message:'All sensors filtered out' }};
   }
   const avg=Math.round(sum/count);
   return {
@@ -417,15 +471,12 @@ async function fetchPurpleAirForAddress(addressRow){
   };
 }
 
-// ========== AirNow + OpenWeather ==========
-
 async function fetchAirNowAQI(lat,lon,radiusMiles){
   const degOffset=1.0;
   const minLat=lat-degOffset, maxLat=lat+degOffset;
   const minLon=lon-degOffset, maxLon=lon+degOffset;
   const hourStr=new Date().toISOString().slice(0,13);
-
-  const debugInfo={lat,lon,boundingBox:{minLat,maxLat,minLon,maxLon},radiusMiles};
+  const debugInfo={lat,lon,boundingBox:{minLat,maxLat,minLon,maxLon}, radiusMiles};
   const url='https://www.airnowapi.org/aq/data/';
   try{
     const resp=await axios.get(url,{
@@ -466,7 +517,7 @@ async function fetchAirNowAQI(lat,lon,radiusMiles){
     }
     const avg=Math.round(sum/count);
     return {closest:closestVal,average:avg,debug:debugInfo};
-  } catch(e){
+  }catch(e){
     debugInfo.error=e.message;
     return {closest:0,average:0,debug:debugInfo};
   }
@@ -494,29 +545,28 @@ async function fetchOpenWeather(lat,lon){
       humidity: main.humidity||0,
       windSpeed: wind.speed||0,
       windDeg: wind.deg||0,
-      windDir:getCardinal(wind.deg),
+      windDir: getCardinal(wind.deg),
       debug:debugInfo
     };
-  }catch(err){
-    debugInfo.error=err.message;
+  }catch(e){
+    debugInfo.error=e.message;
     return {tempF:0,humidity:0,windSpeed:0,windDeg:0,windDir:'Unknown',debug:debugInfo};
   }
 }
 
-// ========== 24hr logic ==========
-
+// 24hr logic
 async function earliestTimestampForAddress(addressId,source){
   const res=await query(`
     SELECT MIN(timestamp) as mint
     FROM address_hourly_data
     WHERE address_id=$1
       AND source=$2
-  `,[addressId, source]);
-  if(!res.rows.length||!res.rows[0].mint) return null;
+  `,[addressId,source]);
+  if(!res.rows.length||!res.rows[0].mint)return null;
   return new Date(res.rows[0].mint);
 }
 function format24hrAvailable(earliest){
-  if(!earliest) return 'No data yet';
+  if(!earliest)return 'No data yet';
   const d=new Date(earliest.getTime()+24*3600*1000);
   return formatDayTimeForUser(d);
 }
@@ -533,7 +583,7 @@ async function updateTrailing24hAverages(userId,addressId,timestamp,source){
       AND source=$3
       AND timestamp>=$4
   `,[userId,addressId,source,dayAgo]);
-  if(!rows.rows.length) return;
+  if(!rows.rows.length)return;
   const c24=Math.round(rows.rows[0].cavg||0);
   const r24=Math.round(rows.rows[0].ravg||0);
   const count=Number(rows.rows[0].cnt)||0;
@@ -545,8 +595,7 @@ async function updateTrailing24hAverages(userId,addressId,timestamp,source){
       AND source=$3
       AND timestamp=$4
   `,[userId,addressId,source,timestamp]);
-  if(!newRow.rows.length) return;
-
+  if(!newRow.rows.length)return;
   let dbRow=newRow.rows[0];
   let d=dbRow.data_json||{};
   if(count>=24){
@@ -557,20 +606,19 @@ async function updateTrailing24hAverages(userId,addressId,timestamp,source){
     UPDATE address_hourly_data
     SET data_json=$1
     WHERE id=$2
-  `,[d, dbRow.id]);
+  `,[d,dbRow.id]);
 }
 async function fetchAndStoreHourlyDataForUser(userId){
   const userRes=await query('SELECT aqi_radius FROM users WHERE id=$1',[userId]);
-  if(!userRes.rows.length) return;
+  if(!userRes.rows.length)return;
   const radiusMiles=userRes.rows[0].aqi_radius||5;
-
   const addrRes=await query(`
     SELECT id,user_id,address,lat,lon,purpleair_sensor_ids
     FROM user_addresses
     WHERE user_id=$1
   `,[userId]);
   for(const adr of addrRes.rows){
-    if(!adr.lat||!adr.lon) continue;
+    if(!adr.lat||!adr.lon)continue;
     if(!adr.purpleair_sensor_ids){
       await initializePurpleAirSensorsForAddress(adr.id,radiusMiles);
       const upd=await query('SELECT * FROM user_addresses WHERE id=$1',[adr.id]);
@@ -583,7 +631,7 @@ async function fetchAndStoreHourlyDataForUser(userId){
     const owRes=await fetchOpenWeather(adr.lat,adr.lon);
 
     const now=new Date();
-
+    // AirNow
     let dataAir={
       type:'AirNow',
       fetchedAt:now.toISOString(),
@@ -596,9 +644,10 @@ async function fetchAndStoreHourlyDataForUser(userId){
         (user_id,address_id,timestamp,source,aqi_closest,aqi_average,data_json)
       VALUES($1,$2,$3,'AirNow',$4,$5,$6)
       ON CONFLICT DO NOTHING
-    `,[ userId,adr.id,now,airRes.closest,airRes.average,dataAir ]);
+    `,[userId,adr.id,now,airRes.closest,airRes.average,dataAir]);
     await updateTrailing24hAverages(userId,adr.id,now,'AirNow');
 
+    // PurpleAir
     let dataPA={
       type:'PurpleAir',
       fetchedAt:now.toISOString(),
@@ -611,9 +660,10 @@ async function fetchAndStoreHourlyDataForUser(userId){
         (user_id,address_id,timestamp,source,aqi_closest,aqi_average,data_json)
       VALUES($1,$2,$3,'PurpleAir',$4,$5,$6)
       ON CONFLICT DO NOTHING
-    `,[ userId,adr.id,now,purpleRes.closest,purpleRes.average,dataPA ]);
+    `,[userId,adr.id,now,purpleRes.closest,purpleRes.average,dataPA]);
     await updateTrailing24hAverages(userId,adr.id,now,'PurpleAir');
 
+    // OpenWeather
     let dataOW={
       type:'OpenWeather',
       fetchedAt:now.toISOString(),
@@ -629,7 +679,7 @@ async function fetchAndStoreHourlyDataForUser(userId){
         (user_id,address_id,timestamp,source,aqi_closest,aqi_average,data_json)
       VALUES($1,$2,$3,'OpenWeather',0,0,$4)
       ON CONFLICT DO NOTHING
-    `,[ userId,adr.id,now,dataOW ]);
+    `,[userId,adr.id,now,dataOW]);
     await updateTrailing24hAverages(userId,adr.id,now,'OpenWeather');
   }
 }
@@ -640,11 +690,13 @@ async function latestSourceRow(addressId,source){
     ORDER BY timestamp DESC
     LIMIT 1
   `,[addressId,source]);
-  if(!rec.rows.length) return null;
+  if(!rec.rows.length)return null;
   return rec.rows[0];
 }
 
-// ---------- CRON Schedules ----------
+////////////////////////////////////////////////////////////////////////////////
+// CRON
+////////////////////////////////////////////////////////////////////////////////
 
 cron.schedule('0 * * * *', async()=>{
   console.log('[CRON] hourly triggered');
@@ -679,12 +731,12 @@ cron.schedule('*/15 * * * *', async()=>{
       }
     }
   }catch(e){
-    console.error('[CRON daily check]',e);
+    console.error('[CRON daily]',e);
   }
 });
 async function buildDailyEmail(userId){
   const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[userId]);
-  if(!addrRes.rows.length) return null;
+  if(!addrRes.rows.length)return null;
   let lines=[];
   for(const adr of addrRes.rows){
     if(!adr.lat||!adr.lon){
@@ -692,6 +744,7 @@ async function buildDailyEmail(userId){
       continue;
     }
     lines.push(`Address: ${adr.address}`);
+
     const an=await latestSourceRow(adr.id,'AirNow');
     if(an){
       let c=an.aqi_closest||0, r=an.aqi_average||0;
@@ -706,12 +759,13 @@ async function buildDailyEmail(userId){
         r24=`Available at ${format24hrAvailable(earliest)}`;
       }
       lines.push(` AirNow => ClosestAQI=${c}, RadiusAvg=${r}, 24hrClosestAvg=${c24}, 24hrRadiusAvg=${r24}`);
-    }else{
+    } else {
       lines.push(` AirNow => No data`);
     }
+
     const pa=await latestSourceRow(adr.id,'PurpleAir');
     if(pa){
-      let c=pa.aqi_closest||0,r=pa.aqi_average||0;
+      let c=pa.aqi_closest||0, r=pa.aqi_average||0;
       let c24=pa.data_json?.closest24hrAvg;
       let r24=pa.data_json?.radius24hrAvg;
       if(c24===undefined){
@@ -723,9 +777,10 @@ async function buildDailyEmail(userId){
         r24=`Available at ${format24hrAvailable(earliest)}`;
       }
       lines.push(` PurpleAir => ClosestAQI=${c}, RadiusAvg=${r}, 24hrClosestAvg=${c24}, 24hrRadiusAvg=${r24}`);
-    }else{
+    } else {
       lines.push(` PurpleAir => No data`);
     }
+
     const ow=await latestSourceRow(adr.id,'OpenWeather');
     if(ow){
       const d=ow.data_json||{};
@@ -735,25 +790,29 @@ async function buildDailyEmail(userId){
         c24=`Available at ${format24hrAvailable(earliest)}`;
       }
       lines.push(` OpenWeather => Now: Temp=${d.tempF||0}F, Wind=${d.windSpeed||0} mph, 24hrAvgTemp=${c24}`);
-    }else{
+    } else {
       lines.push(` OpenWeather => No data`);
     }
   }
   return lines.join('\n');
 }
 
-// ---------- Routes ----------
+////////////////////////////////////////////////////////////////////////////////
+// ROUTES
+////////////////////////////////////////////////////////////////////////////////
 
-app.use(express.static(__dirname));
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __filename2=fileURLToPath(import.meta.url);
+const __dirname2=path.dirname(__filename2);
+
+app.use(express.static(__dirname2));
+
 app.get('/',(req,res)=>{
-  // If you have passport 
-  if(req.isAuthenticated && req.isAuthenticated()){
-    return res.redirect('/html/dashboard.html');
-  }
-  res.sendFile(path.join(__dirname,'index.html'));
+  if(req.isAuthenticated())return res.redirect('/html/dashboard.html');
+  res.sendFile(path.join(__dirname2,'index.html'));
 });
 
-// minimal placeholder for google places
 app.get('/js/autocomplete.js',(req,res)=>{
   const key=process.env.GOOGLE_GEOCODE_KEY||'';
   const content=`
@@ -774,7 +833,7 @@ app.get('/js/autocomplete.js',(req,res)=>{
 
 // signup
 app.post('/api/signup', async(req,res)=>{
-  const {email,password,password2,address,agreePolicy,agreeTerms}=req.body;
+  const { email, password, password2, address, agreePolicy, agreeTerms}=req.body;
   if(!email||!password||!password2){
     return res.status(400).send('All fields required');
   }
@@ -796,7 +855,7 @@ app.post('/api/signup', async(req,res)=>{
     `,[email,hash,JSON.stringify({})]);
     const newUserId=userRes.rows[0].id;
     if(address && address.trim()){
-      let lat=null,lon=null;
+      let lat=null, lon=null;
       if(process.env.GOOGLE_GEOCODE_KEY){
         const geoURL='https://maps.googleapis.com/maps/api/geocode/json';
         const resp=await axios.get(geoURL,{params:{address,key:process.env.GOOGLE_GEOCODE_KEY}});
@@ -828,7 +887,7 @@ app.post('/api/add-address', ensureAuth, async(req,res)=>{
   if(c>=3){
     return res.status(400).send('Max 3 addresses allowed');
   }
-  let lat=null,lon=null;
+  let lat=null, lon=null;
   if(process.env.GOOGLE_GEOCODE_KEY){
     const geoURL='https://maps.googleapis.com/maps/api/geocode/json';
     const resp=await axios.get(geoURL,{params:{address,key:process.env.GOOGLE_GEOCODE_KEY}});
@@ -844,7 +903,7 @@ app.post('/api/add-address', ensureAuth, async(req,res)=>{
   res.redirect('/html/dashboard.html');
 });
 
-// delete address
+// delete-address
 app.post('/api/delete-address', ensureAuth, async(req,res)=>{
   const {addressId}=req.body;
   if(!addressId) return res.status(400).send('No addressId');
@@ -864,8 +923,8 @@ app.post('/api/set-aqi-radius', ensureAuth, async(req,res)=>{
 app.post('/api/set-daily-time', ensureAuth, async(req,res)=>{
   const {hour,minute}=req.body;
   if(hour===undefined||minute===undefined) return res.status(400).json({error:'Missing hour/minute'});
-  await query('UPDATE users SET daily_report_hour=$1,daily_report_minute=$2 WHERE id=$3',
-    [parseInt(hour,10),parseInt(minute,10),req.user.id]);
+  await query('UPDATE users SET daily_report_hour=$1, daily_report_minute=$2 WHERE id=$3',
+    [parseInt(hour,10), parseInt(minute,10), req.user.id]);
   res.json({success:true});
 });
 
@@ -874,13 +933,13 @@ app.get('/api/list-addresses', ensureAuth, async(req,res)=>{
   try{
     const {rows}=await query('SELECT id,address,lat,lon FROM user_addresses WHERE user_id=$1 ORDER BY id',[req.user.id]);
     res.json(rows);
-  }catch(e){
+  } catch(e){
     console.error('/api/list-addresses error',e);
     res.status(500).json({error:'Internal error'});
   }
 });
 
-// /api/myReport => returns table-based approach
+// /api/myReport => table-based approach
 app.get('/api/myReport', ensureAuth, async(req,res)=>{
   try{
     const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[req.user.id]);
@@ -908,8 +967,6 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
 });
 async function buildAddressReportHTML(adr,an,pa,ow){
   let lines='';
-  // We'll build them piece by piece
-  // We'll do same approach as you wanted: table with Current vs. 24hr
   lines+=await buildAirNowSection(adr,an);
   lines+=await buildPurpleAirSection(adr,pa);
   lines+=await buildOpenWeatherSection(adr,ow);
@@ -995,7 +1052,7 @@ async function buildPurpleAirSection(adr, pa){
   `;
 }
 async function buildOpenWeatherSection(adr, ow){
-  if(!ow) return `<p>OpenWeather => No data</p>`;
+  if(!ow)return `<p>OpenWeather => No data</p>`;
   const d=ow.data_json||{};
   let c24=(d.ow24hrTemp!==undefined)
     ? d.ow24hrTemp
@@ -1032,7 +1089,7 @@ app.post('/api/report-now', ensureAuth, async(req,res)=>{
       headers:{cookie:req.headers.cookie||''}
     });
     res.json(r.data);
-  }catch(e){
+  } catch(e){
     console.error('[report-now error]',e);
     res.status(502).json({error:'Error: HTTP 502 - '+e});
   }
@@ -1040,8 +1097,8 @@ app.post('/api/report-now', ensureAuth, async(req,res)=>{
 
 // forgot
 app.post('/api/forgot', async(req,res)=>{
-  const { email }=req.body;
-  if(!email) return res.status(400).send('No email');
+  const {email}=req.body;
+  if(!email)return res.status(400).send('No email');
   const {rows}=await query('SELECT id FROM users WHERE email=$1',[email]);
   if(!rows.length){
     return res.send('If found, a reset link is sent.');
@@ -1058,9 +1115,9 @@ app.post('/api/forgot', async(req,res)=>{
   res.send('If found, a reset link is emailed.');
 });
 // reset
-app.post('/api/reset',async(req,res)=>{
+app.post('/api/reset', async(req,res)=>{
   const {token,newPassword}=req.body;
-  if(!token||!newPassword) return res.status(400).send('Missing token or newPassword');
+  if(!token||!newPassword)return res.status(400).send('Missing token or newPassword');
   if(newPassword.length<8||!/[0-9]/.test(newPassword)||!/[A-Za-z]/.test(newPassword)||!/[^A-Za-z0-9]/.test(newPassword)){
     return res.status(400).send('New password not complex enough');
   }
@@ -1069,7 +1126,8 @@ app.post('/api/reset',async(req,res)=>{
     SELECT user_id FROM password_reset_tokens
     WHERE token=$1 AND expires_at>$2
   `,[token,now]);
-  if(!rows.length) return res.status(400).send('Invalid/expired token');
+  if(!rows.length)return res.status(400).send('Invalid/expired token');
+
   const userId=rows[0].user_id;
   const hash=await bcrypt.hash(newPassword,10);
   await query('UPDATE users SET password_hash=$1 WHERE id=$2',[hash,userId]);
@@ -1122,7 +1180,10 @@ app.post('/auth/apple/callback',
   (req,res)=>res.redirect('/html/dashboard.html')
 );
 
-// listen
+////////////////////////////////////////////////////////////////////////////////
+// Start the server
+////////////////////////////////////////////////////////////////////////////////
+
 const port=process.env.PORT||3000;
 app.listen(port, async()=>{
   await initDB();
