@@ -140,7 +140,7 @@ async function loadAddresses(){
     } else {
       let html='<ul>';
       for(const a of arr){
-        html+=`<li>${a.address} ${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
+        html+=`<li>${a.address} ${a.lat&&a.lon?'(lat/lon ok)':'(No lat/lon)'}
           <form method="post" action="/api/delete-address" style="display:inline;">
             <input type="hidden" name="addressId" value="${a.id}">
             <button type="submit" style="margin-left:10px;">Delete</button>
@@ -161,7 +161,7 @@ async function loadReport(){
     if(data.error){
       reportArea.innerText='Error: '+data.error;
     } else {
-      reportArea.innerHTML=data.html || 'No report.';
+      reportArea.innerHTML=data.html||'No report.';
     }
   } catch(e){
     reportArea.innerText='Error: '+e;
@@ -176,7 +176,7 @@ async function updateNow(){
     if(data.error){
       reportArea.innerText='Error: '+data.error;
     } else {
-      reportArea.innerHTML=data.html || 'No report.';
+      reportArea.innerHTML=data.html||'No report.';
     }
   } catch(e){
     hideLoading();
@@ -219,12 +219,12 @@ function updateCountdowns(){
   const now=new Date();
   const nextHour=new Date(now);
   nextHour.setHours(now.getHours()+1,0,0,0);
-  const hourlyMs=nextHour - now;
+  const hourlyMs=nextHour-now;
 
   const nextDaily=new Date(now);
   nextDaily.setHours(8,0,0,0);
   if(nextDaily<=now) nextDaily.setDate(nextDaily.getDate()+1);
-  const dailyMs=nextDaily - now;
+  const dailyMs=nextDaily-now;
 
   document.getElementById('hourlyCountdown').innerText=formatMs(hourlyMs);
   document.getElementById('dailyCountdown').innerText=formatMs(dailyMs);
