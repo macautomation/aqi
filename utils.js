@@ -85,7 +85,6 @@ export function formatDayTimeForUser(d) {
   return `${dayStr} at ${formatHourMin(d)}`;
 }
 
-// Helper => "12:15pm" format
 function formatHourMin(d) {
   let hh = d.getHours();
   const mm = d.getMinutes();
