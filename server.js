@@ -38,6 +38,16 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
 // If you have an APP_URL in environment, we use that for callback URLs
 // Otherwise default to http://localhost:3000 for dev
 
+// Added ensureAuth
+function ensureAuth(req, res, next) {
+  if (req.isAuthenticated()) return next();
+  // If it’s an API route, return 401 JSON. Otherwise, redirect.
+  if (req.path.startsWith('/api/')) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  return res.redirect('/html/login.html');
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Inline DB init
 ////////////////////////////////////////////////////////////////////////////////
