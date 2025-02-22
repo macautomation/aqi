@@ -18,6 +18,35 @@ import { fileURLToPath } from 'url';
 import cron from 'node-cron';
 import axios from 'axios';
 
+// CUSTOM DESERIALIZE
+passport.serializeUser((user, done) => {
+  // we store just the user’s primary key in session
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id, done) => {
+  try {
+    const { rows } = await query('SELECT * FROM users WHERE id=$1', [id]);
+    if (!rows.length) {
+      // user row doesn’t exist => forcibly log them out
+      return done(null, false);
+    }
+    return done(null, rows[0]); // attach the user row to req.user
+  } catch (err) {
+    return done(err);
+  }
+});
+
+// 3) Then create your Express app
+const app = express();
+
+// 4) Use your session middleware
+app.use(session(...));
+
+// 5) Initialize passport
+app.use(passport.initialize());
+app.use(passport.session());
+
 // SendGrid for emailing
 import sgMail from '@sendgrid/mail';
 sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
