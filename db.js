@@ -10,7 +10,7 @@ const pool = new Pool({
 export async function initDB() {
   const client = await pool.connect();
   try {
-    // Create 'users' if not exists
+    // Create 'users' if you haven't already:
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -34,34 +34,43 @@ export async function initDB() {
       );
     `);
 
-    // user_addresses
+    // Create a separate table for addresses
+    // Each user can have up to 3 addresses
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_addresses (
         id SERIAL PRIMARY KEY,
         user_id INT REFERENCES users(id),
         address TEXT NOT NULL,
         lat DOUBLE PRECISION,
-        lon DOUBLE PRECISION,
-        -- New column to store up to 10 sensor IDs, comma-separated
-        purpleair_sensor_ids TEXT
+        lon DOUBLE PRECISION
       );
     `);
 
-    // address_hourly_data
+    // Add a column for storing chosen PurpleAir sensor IDs
+    // (This won't fail if column already exists or user doesn't have permission)
+    try {
+      await client.query(`
+        ALTER TABLE user_addresses
+        ADD COLUMN IF NOT EXISTS purpleair_sensor_ids TEXT;
+      `);
+    } catch(e) {
+      console.warn('[initDB] Could not add purpleair_sensor_ids column:', e.message);
+    }
+
+    // Create a table for storing hourly data for each user address.
     await client.query(`
       CREATE TABLE IF NOT EXISTS address_hourly_data (
         id SERIAL PRIMARY KEY,
         user_id INT REFERENCES users(id),
         address_id INT REFERENCES user_addresses(id),
         timestamp TIMESTAMP NOT NULL,
-        source VARCHAR(50) NOT NULL,  -- 'AirNow','PurpleAir','OpenWeather'
+        source VARCHAR(50) NOT NULL,   -- 'AirNow', 'PurpleAir', 'OpenWeather'
         aqi_closest INT,
         aqi_average INT,
         data_json JSONB,
         UNIQUE (user_id, address_id, timestamp, source)
       );
     `);
-
   } finally {
     client.release();
   }
