@@ -34,25 +34,27 @@ export async function initDB() {
       );
     `);
 
-    // Create user_addresses if not exists
+    // user_addresses
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_addresses (
         id SERIAL PRIMARY KEY,
         user_id INT REFERENCES users(id),
         address TEXT NOT NULL,
         lat DOUBLE PRECISION,
-        lon DOUBLE PRECISION
+        lon DOUBLE PRECISION,
+        -- New column to store up to 10 sensor IDs, comma-separated
+        purpleair_sensor_ids TEXT
       );
     `);
 
-    // Create address_hourly_data if not exists
+    // address_hourly_data
     await client.query(`
       CREATE TABLE IF NOT EXISTS address_hourly_data (
         id SERIAL PRIMARY KEY,
         user_id INT REFERENCES users(id),
         address_id INT REFERENCES user_addresses(id),
         timestamp TIMESTAMP NOT NULL,
-        source VARCHAR(50) NOT NULL,  -- 'AirNow', 'PurpleAir', 'OpenWeather'
+        source VARCHAR(50) NOT NULL,  -- 'AirNow','PurpleAir','OpenWeather'
         aqi_closest INT,
         aqi_average INT,
         data_json JSONB,
