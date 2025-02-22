@@ -34,8 +34,7 @@ export async function initDB() {
       );
     `);
 
-    // Create a separate table for addresses
-    // Each user can have up to 3 addresses
+    // Create user_addresses if missing
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_addresses (
         id SERIAL PRIMARY KEY,
@@ -46,7 +45,7 @@ export async function initDB() {
       );
     `);
 
-    // Add a column for storing chosen PurpleAir sensor IDs, if not exists
+    // Add column for PurpleAir sensor IDs
     try {
       await client.query(`
         ALTER TABLE user_addresses
@@ -56,7 +55,7 @@ export async function initDB() {
       console.warn('[initDB] Could not add purpleair_sensor_ids column:', e.message);
     }
 
-    // Create a table for storing hourly data for each user address.
+    // Create table for address_hourly_data
     await client.query(`
       CREATE TABLE IF NOT EXISTS address_hourly_data (
         id SERIAL PRIMARY KEY,
