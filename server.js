@@ -826,31 +826,34 @@ app.get('/api/myReport', ensureAuth, async (req, res) => {
 
       // OPENWEATHER
       if (ow) {
-        const d = ow.data_json || {};
-        const debugLink = buildDebugPopupLink(d.debug || {}, 'OpenWeather Debug');
-        html += `
-          <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
-            <thead>
-              <tr style="background:#f0f0f0;"><th colspan="2">OpenWeather</th></tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Current Hourly</td>
-                <td>
-                  Temp=${d.tempF || 0}F, Wind=${d.windSpeed || 0} mph from ${d.windDir || '??'} (${d.windDeg || 0}°)
-                  <a href="#" data-debug="${encodeURIComponent(debugLink)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
-                </td>
-              </tr>
-              <tr>
-                <td>24hr Average</td>
-                <td>Temp=${c24}F (assuming we store that if desired)</td>
-              </tr>
-            </tbody>
-          </table>
-        `;
-      } else {
-        html += `<p>OpenWeather => No data</p>`;
-      }
+      const d = ow.data_json || {};
+      const debugLink = buildDebugPopupLink(d.debug || {}, 'OpenWeather Debug');
+      const c24 = (d.ow24hrTemp !== undefined)
+        ? d.ow24hrTemp
+        : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'OpenWeather'))}`;
+      html += `
+        <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
+          <thead>
+            <tr style="background:#f0f0f0;"><th colspan="2">OpenWeather</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Current Hourly</td>
+              <td>
+                Temp=${d.tempF || 0}F, Wind=${d.windSpeed || 0} mph from ${d.windDir || '??'} (${d.windDeg || 0}°)
+                <a href="#" data-debug="${encodeURIComponent(debugLink)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
+              </td>
+            </tr>
+            <tr>
+              <td>24hr Average</td>
+              <td>Temp=${c24}F (assuming we store that if desired)</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    } else {
+      html += `<p>OpenWeather => No data</p>`;
+    }
     }
     res.json({ html });
   } catch (e) {
