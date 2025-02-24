@@ -46,8 +46,7 @@ export async function initDB() {
       );
     `);
 
-    // Add a column for storing chosen PurpleAir sensor IDs
-    // (This won't fail if column already exists or user doesn't have permission)
+    // Add a column for storing chosen PurpleAir sensor IDs, if not exists
     try {
       await client.query(`
         ALTER TABLE user_addresses
