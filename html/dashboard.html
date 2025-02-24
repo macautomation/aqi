@@ -13,7 +13,7 @@
     .loadingGif { width:50px; display:block; margin:10px auto; }
     .btn { padding:10px; margin-top:10px; cursor:pointer; }
 
-    /* pop-up debug or additional data */
+    /* popup styling */
     #detailPopup {
       display:none;
       position:absolute;
@@ -33,6 +33,7 @@
   <img src="../images/logo.png" alt="AQI Updates" class="logo">
   <h1>Your Dashboard</h1>
 
+  <!-- 1) Let user select the AQI measurement distance -->
   <div>
     <h3>Set Your AQI Measurement Distance</h3>
     <form id="aqiRadiusForm">
@@ -51,6 +52,7 @@
 
   <hr>
 
+  <!-- 2) Let user pick daily report time in 15 minute increments -->
   <div>
     <h3>Set Your Daily Report Time</h3>
     <form id="dailyTimeForm">
@@ -76,6 +78,7 @@
     <hr>
     <h3>Add a new address (up to 3)</h3>
     <form method="post" action="/api/add-address">
+      <!-- ID must match "addressInput" for autocomplete -->
       <input type="text" id="addressInput" name="address" placeholder="Address to report on">
       <button type="submit">Add Address</button>
     </form>
@@ -105,19 +108,21 @@
 <div id="detailPopup"></div>
 
 <script>
+// Reusable fetch helper
 async function fetchJSON(url, opts){
-  const resp=await fetch(url, opts);
+  const resp = await fetch(url, opts);
   if(!resp.ok){
     if(resp.status===401){
-      alert('Not authenticated, redirecting to login...');
+      alert('Not authenticated, redirecting...');
       window.location='login.html';
       return null;
     }
-    const txt=await resp.text();
+    let txt=await resp.text();
     throw new Error(`HTTP ${resp.status} - ${txt}`);
   }
   return resp.json();
 }
+
 const addressesList=document.getElementById('addressesList');
 const reportArea=document.getElementById('reportArea');
 const loadingMsg=document.getElementById('loadingMsg');
@@ -131,6 +136,7 @@ function hideLoading(){
   loadingMsg.style.display='none';
 }
 
+// ========== Addresses
 async function loadAddresses(){
   try{
     const arr=await fetchJSON('/api/list-addresses');
@@ -154,6 +160,8 @@ async function loadAddresses(){
     addressesList.innerText='Error: '+e;
   }
 }
+
+// ========== Report
 async function loadReport(){
   try{
     const data=await fetchJSON('/api/myReport');
@@ -183,7 +191,8 @@ async function updateNow(){
     reportArea.innerText='Error: '+e;
   }
 }
-// set radius
+
+// ========== Set radius
 document.getElementById('aqiRadiusForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const val=document.getElementById('aqiRadiusSelect').value;
@@ -193,12 +202,13 @@ document.getElementById('aqiRadiusForm').addEventListener('submit', async e=>{
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({radius:val})
     });
-    alert('AQI distance updated.');
-  } catch(err){
+    alert('AQI distance updated');
+  }catch(err){
     alert('Error updating distance: '+err);
   }
 });
-// set daily time
+
+// ========== Set daily time
 document.getElementById('dailyTimeForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const hour=document.getElementById('dailyHour').value;
@@ -207,20 +217,22 @@ document.getElementById('dailyTimeForm').addEventListener('submit', async e=>{
     await fetchJSON('/api/set-daily-time',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({hour,minute})
+      body:JSON.stringify({hour, minute})
     });
-    alert('Daily report time updated.');
+    alert('Daily report time updated');
   } catch(err){
     alert('Error updating daily time: '+err);
   }
 });
 
+// ========== countdown
 function updateCountdowns(){
   const now=new Date();
   const nextHour=new Date(now);
   nextHour.setHours(now.getHours()+1,0,0,0);
   const hourlyMs=nextHour-now;
 
+  // naive daily at 8am
   const nextDaily=new Date(now);
   nextDaily.setHours(8,0,0,0);
   if(nextDaily<=now) nextDaily.setDate(nextDaily.getDate()+1);
@@ -241,10 +253,11 @@ updateCountdowns();
 
 updateBtn.addEventListener('click', updateNow);
 
+// on load
 loadAddresses();
 loadReport();
 
-// fancy pop-up for debug or additional data
+// ========== Fancy pop-up for debug or additional data
 function showDetailPopup(html, event){
   const popup=document.getElementById('detailPopup');
   popup.innerHTML=html + `<p><button onclick="hideDetailPopup()">Close</button></p>`;
@@ -260,6 +273,8 @@ function hideDetailPopup(){
   popup.innerHTML='';
 }
 </script>
+
+<!-- Our google places for address -->
 <script src="/js/autocomplete.js"></script>
 </body>
 </html>
