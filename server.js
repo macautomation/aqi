@@ -81,7 +81,7 @@ async function initDB() {
         daily_report_hour INT DEFAULT 8,
         daily_report_minute INT DEFAULT 0,
         closest_24hr_avg INT,
-        radius_24hr_avg
+        radius_24hr_avg INT
       );
     `);
     // password_reset_tokens
