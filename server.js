@@ -757,7 +757,7 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
         html+=`
           <p>AirNow => 
             Closest <span style="${cStyle}">${c} (${cat})</span> 
-            <a href="#" onclick="showDetailPopup('${debugLink}', event);return false;">[more detail]</a>,
+            <a href="#" onclick="showDetailPopup(${JSON.stringify(debugLink)}, event);return false;">[more detail]</a>,
             Radius <span style="${rStyle}">${r}</span>,
             24hrClosestAvg=${c24}, 24hrRadiusAvg=${r24}
           </p>
@@ -790,7 +790,7 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
         html+=`
           <p>PurpleAir => 
             Closest <span style="${cStyle}">${c} (${cat})</span>
-            <a href="#" onclick="showDetailPopup('${debugLink}', event);return false;">[more detail]</a>,
+            <a href="#" onclick="showDetailPopup(${JSON.stringify(debugLink)}, event);return false;">[more detail]</a>,
             Radius <span style="${rStyle}">${r}</span>,
             24hrClosestAvg=${c24}, 24hrRadiusAvg=${r24}
             <br>${nearestDist}
@@ -812,7 +812,7 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
         html+=`
           <p>OpenWeather => 
             Temp=${d.tempF||0}F, Wind=${d.windSpeed||0} mph from ${d.windDir||'??'} (${d.windDeg||0}°),
-            <a href="#" onclick="showDetailPopup('${debugLink}', event);return false;">[more detail]</a>
+            <a href="#" onclick="showDetailPopup(${JSON.stringify(debugLink)}, event);return false;">[more detail]</a>
             <br>24hrAvgTemp=${c24}
           </p>
         `;
