@@ -827,11 +827,12 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
   }
 }
 
-function buildDebugPopupLink(debugObj, title){
-  const raw=JSON.stringify(debugObj,null,2);
-  const safe=raw.replace(/`/g,'\\`');
-  const safeTitle=title.replace(/`/g,'\\`');
-  return `<h3>${safeTitle}</h3><pre>${safe}</pre>`;
+function buildDebugPopupLink(debugObj, title) {
+  const raw = JSON.stringify(debugObj, null, 2);
+  // Also escape newlines to be extra safe
+  const safe = raw.replace(/`/g, '\\`').replace(/\n/g, '\\n');
+  const safeTitle = title.replace(/`/g, '\\`');
+  return '<h3>' + safeTitle + '</h3><pre>' + safe + '</pre>';
 }
 
 // manual re-check => store new data
