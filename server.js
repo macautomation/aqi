@@ -754,14 +754,12 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
           r24=`Available at ${format24hrAvailable(earliest)}`;
         }
         const debugLink=buildDebugPopupLink(an.data_json?.debug||{}, 'AirNow Debug');
-        html+=`
-          <p>AirNow => 
-            Closest <span style="${cStyle}">${c} (${cat})</span> 
-            <a href="#" onclick="showDetailPopup(${JSON.stringify(debugLink)}, event);return false;">[more detail]</a>,
-            Radius <span style="${rStyle}">${r}</span>,
-            24hrClosestAvg=${c24}, 24hrRadiusAvg=${r24}
-          </p>
-        `;
+        html += '<p>AirNow => ' +
+          'Closest <span style="' + cStyle + '">' + c + ' (' + cat + ')</span> ' +
+          '<a href="#" onclick="showDetailPopup(' + JSON.stringify(debugLink) + ', event);return false;">[more detail]</a>, ' +
+          'Radius <span style="' + rStyle + '">' + r + '</span>, ' +
+          '24hrClosestAvg=' + c24 + ', 24hrRadiusAvg=' + r24 +
+          '</p>';
       } else {
         html+=`<p>AirNow => No data</p>`;
       }
@@ -787,15 +785,13 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
           nearestDist=`Nearest sensor is ${pa.data_json.debug.nearestDistance.toFixed(1)} miles away. `;
         }
         const debugLink=buildDebugPopupLink(pa.data_json?.debug||{}, 'PurpleAir Debug');
-        html+=`
-          <p>PurpleAir => 
-            Closest <span style="${cStyle}">${c} (${cat})</span>
-            <a href="#" onclick="showDetailPopup(${JSON.stringify(debugLink)}, event);return false;">[more detail]</a>,
-            Radius <span style="${rStyle}">${r}</span>,
-            24hrClosestAvg=${c24}, 24hrRadiusAvg=${r24}
-            <br>${nearestDist}
-          </p>
-        `;
+        html += '<p>PurpleAir => ' +
+          'Closest <span style="' + cStyle + '">' + c + ' (' + cat + ')</span> ' +
+          '<a href="#" onclick="showDetailPopup(' + JSON.stringify(debugLink) + ', event);return false;">[more detail]</a>, ' +
+          'Radius <span style="' + rStyle + '">' + r + '</span>, ' +
+          '24hrClosestAvg=' + c24 + ', 24hrRadiusAvg=' + r24 +
+          '<br>' + nearestDist +
+          '</p>';
       } else {
         html+=`<p>PurpleAir => No data</p>`;
       }
@@ -809,13 +805,11 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
           const earliest=await earliestTimestampForAddress(adr.id,'OpenWeather');
           c24=`Available at ${format24hrAvailable(earliest)}`;
         }
-        html+=`
-          <p>OpenWeather => 
-            Temp=${d.tempF||0}F, Wind=${d.windSpeed||0} mph from ${d.windDir||'??'} (${d.windDeg||0}°),
-            <a href="#" onclick="showDetailPopup(${JSON.stringify(debugLink)}, event);return false;">[more detail]</a>
-            <br>24hrAvgTemp=${c24}
-          </p>
-        `;
+        html += '<p>OpenWeather => ' +
+          'Temp=' + (d.tempF || 0) + 'F, Wind=' + (d.windSpeed || 0) + ' mph from ' + (d.windDir || '??') + ' (' + (d.windDeg || 0) + '°), ' +
+          '<a href="#" onclick="showDetailPopup(' + JSON.stringify(debugLink) + ', event);return false;">[more detail]</a> ' +
+          '<br>24hrAvgTemp=' + c24 +
+          '</p>';
       } else {
         html+=`<p>OpenWeather => No data</p>`;
       }
