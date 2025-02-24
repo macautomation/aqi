@@ -355,7 +355,7 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
   const row = addrRes.rows[0];
   if (!row.lat || !row.lon) return;
 
-  // Start at 0.5 miles if userRadiusMiles is falsy
+  // Always start at 0.5 miles, unless userRadiusMiles is passed in
   let radiusMiles = userRadiusMiles || 0.5;
   let attempts = 0;
   const maxAttempts = 5;
@@ -363,6 +363,8 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
 
   while (!chosenSensors.length && attempts < maxAttempts) {
     attempts++;
+
+    // Convert miles to roughly degrees (about 69 miles per degree lat)
     const latOffset = radiusMiles / 69;
     const lonOffset = radiusMiles / 69;
     const minLat = row.lat - latOffset;
@@ -370,9 +372,8 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
     const minLon = row.lon - lonOffset;
     const maxLon = row.lon + lonOffset;
 
+    // Call PurpleAir bounding-box API
     const fields = 'sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0,pm2.5,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
-
-    // Call PurpleAir
     const resp = await axios.get('https://api.purpleair.com/v1/sensors', {
       headers: { 'X-API-Key': process.env.PURPLEAIR_API_KEY },
       params: {
@@ -384,10 +385,18 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
         fields
       }
     });
+
     const data = resp.data?.data || [];
+    if (!data.length) {
+      // No sensors at all => expand and try again
+      radiusMiles *= 2;
+      continue;
+    }
+
+    // We got some sensors => let’s keep them, ignoring the "<= radiusMiles" distance filter
+    // We'll parse them into objects, compute distance, then pick the 10 physically closest
     const nowSec = Math.floor(Date.now() / 1000);
 
-    // Convert raw arrays to objects, then filter by "lastSeen <= 1 hour"
     let sensorDetails = data.map(arr => ({
       sensorIndex: arr[0],
       lastSeen: arr[1],
@@ -405,44 +414,31 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
       ozone1: arr[13]
     }));
 
-    // Only consider sensors updated in last hour
+    // Optionally filter out sensors not updated in last hour
     sensorDetails = sensorDetails.filter(s => (nowSec - s.lastSeen) <= 3600);
 
-    // Calculate distance from the user’s lat/lon
+    // Compute distance for each
     sensorDetails.forEach(s => {
       s.distMiles = distanceMiles(row.lat, row.lon, s.lat, s.lon);
     });
 
-    // Filter out sensors beyond the current radiusMiles
-    sensorDetails = sensorDetails.filter(s => s.distMiles <= radiusMiles);
+    // Sort by distance ascending
+    sensorDetails.sort((a, b) => a.distMiles - b.distMiles);
 
-    if (sensorDetails.length > 2) {
-      // As soon as we find >2 sensors, let's stop expanding further
-      // Sort them so we pick the best ones first:
-      sensorDetails.sort((a, b) => {
-        if (b.confidence !== a.confidence) return b.confidence - a.confidence;
-        return b.uptime - a.uptime;
-      });
-      // Grab up to 10 sensors
-      chosenSensors = sensorDetails.slice(0, 10);
-      break; 
-    } else {
-      // If we have 2 or fewer, keep going
-      radiusMiles *= 2;
-    }
+    // We only want the 10 physically closest sensors
+    chosenSensors = sensorDetails.slice(0, 10);
+
+    // Break out immediately after storing
+    break;
   }
 
   if (!chosenSensors.length) {
-    // Means we never found >2 sensors in expansions
-    // Possibly we found 2 or fewer in final attempt? If so, let's store them anyway:
-    // If you want to store them even if it's 2 or fewer, do so here:
-    // chosenSensors = sensorDetails; // if you prefer
-    // If you'd prefer to store nothing, do this:
+    // We never found any sensors after expansions => store blank
     await query('UPDATE user_addresses SET purpleair_sensor_ids=$1 WHERE id=$2', ['', addressId]);
     return;
   }
 
-  // Build the final sensor IDs
+  // Otherwise, build a show_only list of sensor indices
   const sensorIDs = chosenSensors.map(s => s.sensorIndex).join(',');
   await query('UPDATE user_addresses SET purpleair_sensor_ids=$1 WHERE id=$2', [sensorIDs, addressId]);
 }
