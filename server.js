@@ -471,70 +471,86 @@ async function fetchPurpleAirForAddress(addressRow){
   }
   const fields='sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0,pm2.5,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
   const resp=await axios.get('https://api.purpleair.com/v1/sensors',{
-    headers:{'X-API-Key':process.env.PURPLEAIR_API_KEY},
+    headers:{'X-API-Key': process.env.PURPLEAIR_API_KEY},
     params:{ location_type:0, show_only:showOnly, fields }
   });
   const data=resp.data?.data||[];
   if(!data.length){
     return {closest:0, average:0, debug:{showOnly,message:'No sensors from show_only'}};
   }
-  let sensorDetails=data.map(arr=>{
+
+  let sensorDetails = data.map(arr=>{
     return {
-      sensorIndex:arr[0],
-      lastSeen:arr[1],
-      lat:arr[2],
-      lon:arr[3],
-      uptime:arr[4],
-      confidence:arr[5],
-      voc:arr[6],
-      pm1_0:arr[7],
-      pm2_5:arr[8],
-      pm2_5_60m:arr[9],
-      pm2_5_alt:arr[10],
-      pm10_0:arr[11],
-      position_rating:arr[12],
-      ozone1:arr[13]
+      sensorIndex: arr[0],
+      lastSeen: arr[1],
+      lat: arr[2],
+      lon: arr[3],
+      uptime: arr[4],
+      confidence: arr[5],
+      voc: arr[6],
+      pm1_0: arr[7],
+      pm2_5: arr[8],
+      pm2_5_60m: arr[9],
+      pm2_5_alt: arr[10],
+      pm10_0: arr[11],
+      position_rating: arr[12],
+      ozone1: arr[13]
     };
   });
-  let closestDist=Infinity,sum=0,count=0,closestVal=0;
+
+  let closestDist=Infinity, sum=0, count=0, closestVal=0;
   const debugSensors=[];
+
   sensorDetails.forEach(s=>{
-    s.distMiles=distanceMiles(addressRow.lat,addressRow.lon,s.lat,s.lon);
-    s.aqi=pm25toAQI(s.pm2_5||0);
+    s.distMiles = distanceMiles(addressRow.lat,addressRow.lon,s.lat,s.lon);
+
++   // If pm2_5 is null, fallback to pm2_5_60m or pm2_5_alt
+   let rawPM25 = s.pm2_5;
+   if (rawPM25 == null) {
+     if (s.pm2_5_60m != null) {
+       rawPM25 = s.pm2_5_60m;
+     } else if (s.pm2_5_alt != null) {
+       rawPM25 = s.pm2_5_alt;
+     }
+   }
+   s.aqi = pm25toAQI(rawPM25 || 0);
+
     debugSensors.push({
-      sensorIndex:s.sensorIndex,
-      pm2_5:s.pm2_5,
-      aqi:s.aqi,
-      dist:s.distMiles,
-      lastSeen:s.lastSeen,
-      confidence:s.confidence,
-      voc:s.voc,
-      pm1_0:s.pm1_0,
-      pm2_5_60m:s.pm2_5_60m,
-      pm2_5_alt:s.pm2_5_alt,
-      pm10_0:s.pm10_0,
-      ozone1:s.ozone1
+      sensorIndex: s.sensorIndex,
+      pm2_5: s.pm2_5,
+      pm2_5_60m: s.pm2_5_60m,
+      pm2_5_alt: s.pm2_5_alt,
+      pm10_0: s.pm10_0,
+      ozone1: s.ozone1,
+      aqi: s.aqi,
+      dist: s.distMiles,
+      lastSeen: s.lastSeen,
+      confidence: s.confidence,
+      voc: s.voc
     });
-    sum+=s.aqi; count++;
-    if(s.distMiles<closestDist){
-      closestDist=s.distMiles;
-      closestVal=s.aqi;
+    sum += s.aqi; 
+    count++;
+    if(s.distMiles < closestDist){
+      closestDist = s.distMiles;
+      closestVal = s.aqi;
     }
   });
+
   if(!count){
     return {closest:0,average:0,debug:{showOnly,sensorCount:0,message:'All sensors filtered out'}};
   }
-  const avg=Math.round(sum/count);
+  const avg = Math.round(sum/count);
+
   return {
-    closest:closestVal,
-    average:avg,
-    debug:{
-      approach:'show_only',
-      sensorCount:count,
-      lat:addressRow.lat,
-      lon:addressRow.lon,
-      sensors:debugSensors,
-      nearestDistance:closestDist
+    closest: closestVal,
+    average: avg,
+    debug: {
+      approach: 'show_only',
+      sensorCount: count,
+      lat: addressRow.lat,
+      lon: addressRow.lon,
+      sensors: debugSensors,
+      nearestDistance: closestDist
     }
   };
 }
