@@ -1087,6 +1087,15 @@ async function buildPurpleAirSection(adr, pa) {
     <p>${nearestLine}</p>
   `;
 }
+
+async function buildAddressReportHTML(adr, an, pa, ow) {
+  let html = '';
+  html += await buildAirNowSection(adr, an);
+  html += await buildPurpleAirSection(adr, pa);
+  html += await buildOpenWeatherSection(adr, ow);
+  return html;
+}
+
 async function buildOpenWeatherSection(adr, ow) {
   if (!ow) return `<p>OpenWeather => No data</p>`;
   const d = ow.data_json || {};
