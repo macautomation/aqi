@@ -349,80 +349,102 @@ async function sendEmail(to, subject, text){
 // bounding-box logic, 24-hour average, hourly fetch
 ////////////////////////////////////////////////////////////////////////////////
 
-async function initializePurpleAirSensorsForAddress(addressId,userRadiusMiles){
-  const addrRes=await query('SELECT * FROM user_addresses WHERE id=$1',[addressId]);
-  if(!addrRes.rows.length)return;
-  const row=addrRes.rows[0];
-  if(!row.lat||!row.lon)return;
+async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) {
+  const addrRes = await query('SELECT * FROM user_addresses WHERE id=$1', [addressId]);
+  if (!addrRes.rows.length) return;
+  const row = addrRes.rows[0];
+  if (!row.lat || !row.lon) return;
 
-  let radiusMiles=userRadiusMiles||5;
-  let attempts=0;
-  let chosenSensors=[];
-  const maxAttempts=5;
+  // Start at 0.5 miles if userRadiusMiles is falsy
+  let radiusMiles = userRadiusMiles || 0.5;
+  let attempts = 0;
+  const maxAttempts = 5;
+  let chosenSensors = [];
 
-  while(!chosenSensors.length && attempts<maxAttempts){
+  while (!chosenSensors.length && attempts < maxAttempts) {
     attempts++;
-    const latOffset=radiusMiles/69;
-    const lonOffset=radiusMiles/69;
-    const minLat=row.lat-latOffset;
-    const maxLat=row.lat+latOffset;
-    const minLon=row.lon-lonOffset;
-    const maxLon=row.lon+lonOffset;
+    const latOffset = radiusMiles / 69;
+    const lonOffset = radiusMiles / 69;
+    const minLat = row.lat - latOffset;
+    const maxLat = row.lat + latOffset;
+    const minLon = row.lon - lonOffset;
+    const maxLon = row.lon + lonOffset;
 
-    const fields='sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0,pm2.5,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
-    const resp=await axios.get('https://api.purpleair.com/v1/sensors',{
-      headers:{'X-API-Key':process.env.PURPLEAIR_API_KEY},
-      params:{
-        location_type:0,
-        nwlng:minLon,
-        nwlat:maxLat,
-        selng:maxLon,
-        selat:minLat,
+    const fields = 'sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0,pm2.5,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
+
+    // Call PurpleAir
+    const resp = await axios.get('https://api.purpleair.com/v1/sensors', {
+      headers: { 'X-API-Key': process.env.PURPLEAIR_API_KEY },
+      params: {
+        location_type: 0,
+        nwlng: minLon,
+        nwlat: maxLat,
+        selng: maxLon,
+        selat: minLat,
         fields
       }
     });
-    const data=resp.data?.data||[];
-    const nowSec=Math.floor(Date.now()/1000);
+    const data = resp.data?.data || [];
+    const nowSec = Math.floor(Date.now() / 1000);
 
-    let sensorDetails=data.map(arr=>{
-      return {
-        sensorIndex:arr[0],
-        lastSeen:arr[1],
-        lat:arr[2],
-        lon:arr[3],
-        uptime:arr[4],
-        confidence:arr[5],
-        voc:arr[6],
-        pm1_0:arr[7],
-        pm2_5:arr[8],
-        pm2_5_60m:arr[9],
-        pm2_5_alt:arr[10],
-        pm10_0:arr[11],
-        position_rating:arr[12],
-        ozone1:arr[13]
-      };
+    // Convert raw arrays to objects, then filter by "lastSeen <= 1 hour"
+    let sensorDetails = data.map(arr => ({
+      sensorIndex: arr[0],
+      lastSeen: arr[1],
+      lat: arr[2],
+      lon: arr[3],
+      uptime: arr[4],
+      confidence: arr[5],
+      voc: arr[6],
+      pm1_0: arr[7],
+      pm2_5: arr[8],
+      pm2_5_60m: arr[9],
+      pm2_5_alt: arr[10],
+      pm10_0: arr[11],
+      position_rating: arr[12],
+      ozone1: arr[13]
+    }));
+
+    // Only consider sensors updated in last hour
+    sensorDetails = sensorDetails.filter(s => (nowSec - s.lastSeen) <= 3600);
+
+    // Calculate distance from the user’s lat/lon
+    sensorDetails.forEach(s => {
+      s.distMiles = distanceMiles(row.lat, row.lon, s.lat, s.lon);
     });
-    sensorDetails=sensorDetails.filter(s=>(nowSec-s.lastSeen)<=3600);
-    sensorDetails.forEach(s=>{
-      s.distMiles=distanceMiles(row.lat,row.lon,s.lat,s.lon);
-    });
-    sensorDetails=sensorDetails.filter(s=>s.distMiles<=radiusMiles);
-    if(sensorDetails.length){
-      sensorDetails.sort((a,b)=>{
-        if(b.confidence!==a.confidence)return b.confidence-a.confidence;
-        return b.uptime-a.uptime;
+
+    // Filter out sensors beyond the current radiusMiles
+    sensorDetails = sensorDetails.filter(s => s.distMiles <= radiusMiles);
+
+    if (sensorDetails.length > 2) {
+      // As soon as we find >2 sensors, let's stop expanding further
+      // Sort them so we pick the best ones first:
+      sensorDetails.sort((a, b) => {
+        if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+        return b.uptime - a.uptime;
       });
-      chosenSensors=sensorDetails.slice(0,10);
+      // Grab up to 10 sensors
+      chosenSensors = sensorDetails.slice(0, 10);
+      break; 
     } else {
-      radiusMiles*=2;
+      // If we have 2 or fewer, keep going
+      radiusMiles *= 2;
     }
   }
-  if(!chosenSensors.length){
-    await query('UPDATE user_addresses SET purpleair_sensor_ids=$1 WHERE id=$2',['',addressId]);
+
+  if (!chosenSensors.length) {
+    // Means we never found >2 sensors in expansions
+    // Possibly we found 2 or fewer in final attempt? If so, let's store them anyway:
+    // If you want to store them even if it's 2 or fewer, do so here:
+    // chosenSensors = sensorDetails; // if you prefer
+    // If you'd prefer to store nothing, do this:
+    await query('UPDATE user_addresses SET purpleair_sensor_ids=$1 WHERE id=$2', ['', addressId]);
     return;
   }
-  const sensorIDs=chosenSensors.map(s=>s.sensorIndex).join(',');
-  await query('UPDATE user_addresses SET purpleair_sensor_ids=$1 WHERE id=$2',[sensorIDs,addressId]);
+
+  // Build the final sensor IDs
+  const sensorIDs = chosenSensors.map(s => s.sensorIndex).join(',');
+  await query('UPDATE user_addresses SET purpleair_sensor_ids=$1 WHERE id=$2', [sensorIDs, addressId]);
 }
 
 async function fetchPurpleAirForAddressWithCache(addressRow) {
