@@ -45,6 +45,16 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+////////////////////////////////////////////////////////////
+// In-memory cache for AirNow & PurpleAir
+////////////////////////////////////////////////////////////
+const memoAirNow = new Map();
+const memoPurple = new Map();
+const MEMO_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+// Helper function to get current time
+function nowMs() { return Date.now(); }
+
 ////////////////////////////////////////////////////////////////////////////////
 // DB init logic
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,7 +79,9 @@ async function initDB() {
         latest_report TEXT,
         aqi_radius INT DEFAULT 5,
         daily_report_hour INT DEFAULT 8,
-        daily_report_minute INT DEFAULT 0
+        daily_report_minute INT DEFAULT 0,
+        closest_24hr_avg INT,
+        radius_24hr_avg
       );
     `);
     // password_reset_tokens
@@ -355,7 +367,7 @@ async function initializePurpleAirSensorsForAddress(addressId,userRadiusMiles){
     const minLat=row.lat-latOffset;
     const maxLat=row.lat+latOffset;
     const minLon=row.lon-lonOffset;
-    const maxLon=row.lon+latOffset; // might prefer row.lon+lonOffset
+    const maxLon=row.lon+lonOffset;
 
     const fields='sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0,pm2.5,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
     const resp=await axios.get('https://api.purpleair.com/v1/sensors',{
@@ -411,6 +423,24 @@ async function initializePurpleAirSensorsForAddress(addressId,userRadiusMiles){
   }
   const sensorIDs=chosenSensors.map(s=>s.sensorIndex).join(',');
   await query('UPDATE user_addresses SET purpleair_sensor_ids=$1 WHERE id=$2',[sensorIDs,addressId]);
+}
+
+async function fetchPurpleAirForAddressWithCache(addressRow) {
+  const key = `purple:${addressRow.lat},${addressRow.lon},${addressRow.purpleair_sensor_ids || ''}`;
+  const cached = memoPurple.get(key);
+  if (cached) {
+    if (nowMs() - cached.timestamp < MEMO_TTL_MS) {
+      return cached.data;
+    } else {
+      memoPurple.delete(key);
+    }
+  }
+  const result = await fetchPurpleAirForAddress(addressRow);
+  memoPurple.set(key, {
+    timestamp: nowMs(),
+    data: result
+  });
+  return result;
 }
 
 async function fetchPurpleAirForAddress(addressRow){
@@ -491,55 +521,139 @@ async function fetchPurpleAirForAddress(addressRow){
   };
 }
 
-async function fetchAirNowAQI(lat,lon,radiusMiles){
-  const degOffset=1.0;
-  const minLat=lat-degOffset, maxLat=lat+degOffset;
-  const minLon=lon-degOffset, maxLon=lon+degOffset;
-  const hourStr=new Date().toISOString().slice(0,13);
-  const debugInfo={lat,lon,boundingBox:{minLat,maxLat,minLon,maxLon},radiusMiles};
-  const url='https://www.airnowapi.org/aq/data/';
-  try{
-    const resp=await axios.get(url,{
-      params:{
-        startDate:hourStr,
-        endDate:hourStr,
-        parameters:'pm25',
-        BBOX:`${minLon},${minLat},${maxLon},${maxLat}`,
-        dataType:'A',
-        format:'application/json',
-        verbose:0,
-        API_KEY:process.env.AIRNOW_API_KEY
-      }
-    });
-    if(!Array.isArray(resp.data)||!resp.data.length){
-      debugInfo.message='No AirNow sensors returned';
-      return {closest:0,average:0,debug:debugInfo};
+async function fetchAirNowAQIWithCache(lat, lon, initialMiles) {
+  // Build a key. For example, lat,lon, plus we can store the current hour or radius
+  const key = `airnow:${lat},${lon},${initialMiles}`;
+  const cached = memoAirNow.get(key);
+  if (cached) {
+    // check if it's still valid
+    if (nowMs() - cached.timestamp < MEMO_TTL_MS) {
+      // return the cached data immediately
+      return cached.data;
+    } else {
+      // remove the old entry
+      memoAirNow.delete(key);
     }
-    debugInfo.sensorCount=resp.data.length;
-    let sum=0,count=0,closestDist=Infinity,closestVal=0;
-    const sensorDetails=[];
-    for(const s of resp.data){
-      const dist=distanceMiles(lat,lon,s.Latitude,s.Longitude);
-      sensorDetails.push({lat:s.Latitude,lon:s.Longitude,aqi:s.AQI,dist});
-      if(dist<=radiusMiles){
-        sum+=s.AQI; count++;
-        if(dist<closestDist){
-          closestDist=dist;
-          closestVal=s.AQI;
+  }
+
+  // If not cached, we call the real function
+  const result = await fetchAirNowAQI(lat, lon, initialMiles);
+  // store it
+  memoAirNow.set(key, {
+    timestamp: nowMs(),
+    data: result
+  });
+  return result;
+}
+async function fetchAirNowAQI(lat, lon, initialMiles) {
+  // Start small (e.g., 0.5 miles)
+  let radiusMiles = initialMiles || 0.5;
+  let attempts = 0;
+  let maxAttempts = 5;
+  let foundSensors = false;
+
+  // We'll store the "best" debug info if we never find sensors
+  let finalResult = {
+    closest: 0,
+    average: 0,
+    debug: {
+      approach: 'autoExpand',
+      lat,
+      lon,
+      tries: []
+    }
+  };
+
+  while (!foundSensors && attempts < maxAttempts) {
+    attempts++;
+    // Convert miles -> degrees. Approx 69 miles per degree latitude
+    let degOffset = radiusMiles / 69;
+    let minLat = lat - degOffset;
+    let maxLat = lat + degOffset;
+    let minLon = lon - degOffset;
+    let maxLon = lon + degOffset;
+
+    // We'll record the attempt in debug
+    let debugInfo = {
+      pass: attempts,
+      radiusMiles,
+      boundingBox: { minLat, maxLat, minLon, maxLon }
+    };
+
+    // Build request
+    const hourStr = new Date().toISOString().slice(0, 13);
+    const url = 'https://www.airnowapi.org/aq/data/';
+    try {
+      const resp = await axios.get(url, {
+        params: {
+          startDate: hourStr,
+          endDate: hourStr,
+          parameters: 'pm25',
+          BBOX: `${minLon},${minLat},${maxLon},${maxLat}`,
+          dataType: 'A',
+          format: 'application/json',
+          verbose: 0,
+          API_KEY: process.env.AIRNOW_API_KEY
+        }
+      });
+
+      if (!Array.isArray(resp.data) || !resp.data.length) {
+        // no sensors => record and expand
+        debugInfo.message = 'No AirNow sensors returned';
+        finalResult.debug.tries.push(debugInfo);
+        radiusMiles *= 2;
+      } else {
+        // we have data => filter by distance
+        let sum = 0;
+        let count = 0;
+        let closestDist = Infinity;
+        let closestVal = 0;
+        let sensorDetails = [];
+
+        for (const s of resp.data) {
+          const dist = distanceMiles(lat, lon, s.Latitude, s.Longitude);
+          sensorDetails.push({ lat: s.Latitude, lon: s.Longitude, aqi: s.AQI, dist });
+        }
+        // filter if dist <= radiusMiles
+        sensorDetails = sensorDetails.filter(x => x.dist <= radiusMiles);
+        if (!sensorDetails.length) {
+          debugInfo.message = 'No sensors within radiusMiles in the returned data.';
+          finalResult.debug.tries.push(debugInfo);
+          radiusMiles *= 2;
+        } else {
+          // Found sensors => compute average
+          for (const sd of sensorDetails) {
+            sum += sd.aqi;
+            count++;
+            if (sd.dist < closestDist) {
+              closestDist = sd.dist;
+              closestVal = sd.aqi;
+            }
+          }
+          const avg = Math.round(sum / count);
+          debugInfo.sensorCount = count;
+          debugInfo.closestDist = closestDist;
+          debugInfo.closestAQI = closestVal;
+          debugInfo.averageAQI = avg;
+
+          finalResult.closest = closestVal;
+          finalResult.average = avg;
+          finalResult.debug.tries.push(debugInfo);
+
+          foundSensors = true;
         }
       }
+    } catch (e) {
+      debugInfo.error = e.message;
+      finalResult.debug.tries.push(debugInfo);
+      // We'll still expand the radius and try again.
+      radiusMiles *= 2;
     }
-    debugInfo.sensors=sensorDetails.filter(x=>x.dist<=radiusMiles);
-    if(!count){
-      debugInfo.message='No AirNow sensors in user radius';
-      return {closest:0,average:0,debug:debugInfo};
-    }
-    const avg=Math.round(sum/count);
-    return {closest:closestVal,average:avg,debug:debugInfo};
-  } catch(e){
-    debugInfo.error=e.message;
-    return {closest:0,average:0,debug:debugInfo};
   }
+
+  // If we never found sensors, finalResult.closest stays 0, etc.
+  // finalResult.debug will record each attempt. 
+  return finalResult;
 }
 
 async function fetchOpenWeather(lat,lon){
@@ -588,10 +702,11 @@ function format24hrAvailable(earliest){
   const d=new Date(earliest.getTime()+24*3600*1000);
   return formatDayTimeForUser(d);
 }
-async function updateTrailing24hAverages(userId,addressId,timestamp,source){
-  const dayAgo=new Date(timestamp);
-  dayAgo.setHours(dayAgo.getHours()-24);
-  const rows=await query(`
+async function updateTrailing24hAverages(userId, addressId, timestamp, source) {
+  const dayAgo = new Date(timestamp);
+  dayAgo.setHours(dayAgo.getHours() - 24);
+
+  const rows = await query(`
     SELECT AVG(aqi_closest) as cAvg,
            AVG(aqi_average) as rAvg,
            COUNT(*) as cnt
@@ -599,37 +714,54 @@ async function updateTrailing24hAverages(userId,addressId,timestamp,source){
     WHERE user_id=$1
       AND address_id=$2
       AND source=$3
-      AND timestamp>=$4
-  `,[userId,addressId,source,dayAgo]);
-  if(!rows.rows.length)return;
-  const c24=Math.round(rows.rows[0].cavg||0);
-  const r24=Math.round(rows.rows[0].ravg||0);
-  const count=Number(rows.rows[0].cnt)||0;
+      AND timestamp >= $4
+  `,[userId, addressId, source, dayAgo]);
+  
+  if (!rows.rows.length) return;
+  
+  const c24 = Math.round(rows.rows[0].cavg || 0);
+  const r24 = Math.round(rows.rows[0].ravg || 0);
+  const count = Number(rows.rows[0].cnt) || 0;
 
-  const newRow=await query(`
+  const newRow = await query(`
     SELECT * FROM address_hourly_data
     WHERE user_id=$1
       AND address_id=$2
       AND source=$3
       AND timestamp=$4
-  `,[userId,addressId,source,timestamp]);
-  if(!newRow.rows.length)return;
-  let dbRow=newRow.rows[0];
-  let d=dbRow.data_json||{};
-  if(count>=24){
-    d.closest24hrAvg=c24;
-    d.radius24hrAvg=r24;
+  `,[userId, addressId, source, timestamp]);
+  if (!newRow.rows.length) return;
+
+  let dbRow = newRow.rows[0];
+  let d = dbRow.data_json || {};
+
+  if (count >= 24) {
+    d.closest24hrAvg = c24;
+    d.radius24hrAvg = r24;
+
+   // Also store them in the new columns
+   await query(`
+     UPDATE address_hourly_data
+     SET data_json=$1,
+         closest_24hr_avg=$2,
+         radius_24hr_avg=$3
+     WHERE id=$4
+   `,[d, c24, r24, dbRow.id]);
+  } else {
+    // If < 24, we might just update data_json but set columns to null
+   await query(`
+     UPDATE address_hourly_data
+     SET data_json=$1,
+         closest_24hr_avg=NULL,
+         radius_24hr_avg=NULL
+     WHERE id=$2
+   `,[d, dbRow.id]);
   }
-  await query(`
-    UPDATE address_hourly_data
-    SET data_json=$1
-    WHERE id=$2
-  `,[d,dbRow.id]);
 }
 async function fetchAndStoreHourlyDataForUser(userId){
   const userRes=await query('SELECT aqi_radius FROM users WHERE id=$1',[userId]);
   if(!userRes.rows.length)return;
-  const radiusMiles=userRes.rows[0].aqi_radius||5;
+  const radiusMiles=userRes.rows[0].aqi_radius||0.5;
   const addrRes=await query(`
     SELECT id,user_id,address,lat,lon,purpleair_sensor_ids
     FROM user_addresses
@@ -646,8 +778,8 @@ async function fetchAndStoreHourlyDataForUser(userId){
       }
     }
 
-    const airRes=await fetchAirNowAQI(adr.lat,adr.lon,radiusMiles);
-    const purpleRes=await fetchPurpleAirForAddress(adr);
+    const airRes=await fetchAirNowAQIWithCache(adr.lat,adr.lon,radiusMiles);
+    const purpleRes=await fetchPurpleAirForAddressWithCache(adr);
     const owRes=await fetchOpenWeather(adr.lat,adr.lon);
 
     const now=new Date();
@@ -765,36 +897,40 @@ async function buildDailyEmail(userId){
     }
     lines.push(`Address: ${adr.address}`);
 
-    const an=await latestSourceRow(adr.id,'AirNow');
-    if(an){
-      let c=an.aqi_closest||0, r=an.aqi_average||0;
-      let c24=an.data_json?.closest24hrAvg;
-      let r24=an.data_json?.radius24hrAvg;
-      if(c24===undefined){
-        const earliest=await earliestTimestampForAddress(adr.id,'AirNow');
-        c24=`Available at ${format24hrAvailable(earliest)}`;
+    const an = await latestSourceRow(adr.id,'AirNow');
+    if (an) {
+      let c = an.aqi_closest || 0;
+      let r = an.aqi_average || 0;
+
+     let c24 = an.closest_24hr_avg; 
+     let r24 = an.radius_24hr_avg;
+      if (c24 == null) {
+        const earliest = await earliestTimestampForAddress(adr.id,'AirNow');
+        c24 = `Available at ${format24hrAvailable(earliest)}`;
       }
-      if(r24===undefined){
-        const earliest=await earliestTimestampForAddress(adr.id,'AirNow');
-        r24=`Available at ${format24hrAvailable(earliest)}`;
+      if (r24 == null) {
+        const earliest = await earliestTimestampForAddress(adr.id,'AirNow');
+        r24 = `Available at ${format24hrAvailable(earliest)}`;
       }
       lines.push(` AirNow => ClosestAQI=${c}, RadiusAvg=${r}, 24hrClosestAvg=${c24}, 24hrRadiusAvg=${r24}`);
     } else {
       lines.push(` AirNow => No data`);
     }
 
-    const pa=await latestSourceRow(adr.id,'PurpleAir');
-    if(pa){
-      let c=pa.aqi_closest||0, r=pa.aqi_average||0;
-      let c24=pa.data_json?.closest24hrAvg;
-      let r24=pa.data_json?.radius24hrAvg;
-      if(c24===undefined){
-        const earliest=await earliestTimestampForAddress(adr.id,'PurpleAir');
-        c24=`Available at ${format24hrAvailable(earliest)}`;
+    const pa = await latestSourceRow(adr.id,'PurpleAir');
+    if (pa) {
+      let c = pa.aqi_closest || 0;
+      let r = pa.aqi_average || 0;
+
+     let c24 = pa.closest_24hr_avg; 
+     let r24 = pa.radius_24hr_avg;
+      if (c24 == null) {
+        const earliest = await earliestTimestampForAddress(adr.id,'PurpleAir');
+        c24 = `Available at ${format24hrAvailable(earliest)}`;
       }
-      if(r24===undefined){
-        const earliest=await earliestTimestampForAddress(adr.id,'PurpleAir');
-        r24=`Available at ${format24hrAvailable(earliest)}`;
+      if (r24 == null) {
+        const earliest = await earliestTimestampForAddress(adr.id,'PurpleAir');
+        r24 = `Available at ${format24hrAvailable(earliest)}`;
       }
       lines.push(` PurpleAir => ClosestAQI=${c}, RadiusAvg=${r}, 24hrClosestAvg=${c24}, 24hrRadiusAvg=${r24}`);
     } else {
@@ -981,26 +1117,35 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
 });
 
 async function buildAirNowSection(adr, an) {
+  // if there's no row for AirNow, no data
   if (!an) return `<p>AirNow => No data</p>`;
+
   const c = an.aqi_closest || 0;
   const r = an.aqi_average || 0;
   const cat = colorCodeAQI(c);
   const cStyle = getAQIColorStyle(c);
   const rStyle = getAQIColorStyle(r);
-  
-  let c24 = (an.data_json?.closest24hrAvg !== undefined)
-    ? an.data_json.closest24hrAvg
-    : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'AirNow'))}`;
-  let r24 = (an.data_json?.radius24hrAvg !== undefined)
-    ? an.data_json.radius24hrAvg
-    : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'AirNow'))}`;
-  
+
+  // Instead of data_json?.closest24hrAvg, we read the columns directly:
+  let c24 = an.closest_24hr_avg; 
+  let r24 = an.radius_24hr_avg;
+
+  if (c24 == null) {
+    const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
+    c24 = `Available at ${format24hrAvailable(earliest)}`;
+  }
+  if (r24 == null) {
+    const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
+    r24 = `Available at ${format24hrAvailable(earliest)}`;
+  }
+
   const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
   const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
-  
+
+  // We still show debug from data_json if you want
   const debugObj = an.data_json?.debug || {};
   const debugHTML = buildDebugPopupHTML(debugObj, 'AirNow Debug');
-  
+
   return `
     <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
       <thead>
@@ -1011,7 +1156,10 @@ async function buildAirNowSection(adr, an) {
           <td>Current Closest AQI</td>
           <td style="${cStyle}">
             ${c} (${cat})
-            <a href="#" data-debug="${encodeURIComponent(debugHTML)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
+            <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
+               onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
+               [details]
+            </a>
           </td>
         </tr>
         <tr>
@@ -1031,32 +1179,41 @@ async function buildAirNowSection(adr, an) {
   `;
 }
 
+// REPLACE your entire buildPurpleAirSection function with this:
+
 async function buildPurpleAirSection(adr, pa) {
   if (!pa) return `<p>PurpleAir => No data</p>`;
+
   const c = pa.aqi_closest || 0;
   const r = pa.aqi_average || 0;
   const cat = colorCodeAQI(c);
   const cStyle = getAQIColorStyle(c);
   const rStyle = getAQIColorStyle(r);
-  
-  let c24 = (pa.data_json?.closest24hrAvg !== undefined)
-    ? pa.data_json.closest24hrAvg
-    : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'PurpleAir'))}`;
-  let r24 = (pa.data_json?.radius24hrAvg !== undefined)
-    ? pa.data_json.radius24hrAvg
-    : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'PurpleAir'))}`;
-  
+
+  // Use the columns if they exist
+  let c24 = pa.closest_24hr_avg; 
+  let r24 = pa.radius_24hr_avg;
+
+  if (c24 == null) {
+    const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
+    c24 = `Available at ${format24hrAvailable(earliest)}`;
+  }
+  if (r24 == null) {
+    const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
+    r24 = `Available at ${format24hrAvailable(earliest)}`;
+  }
+
   const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
   const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
-  
+
   let nearestLine = '';
   if (pa.data_json?.debug?.nearestDistance !== undefined) {
     nearestLine = `<br>Nearest sensor is ${pa.data_json.debug.nearestDistance.toFixed(1)} miles away`;
   }
-  
+
   const debugObj = pa.data_json?.debug || {};
   const debugHTML = buildDebugPopupHTML(debugObj, 'PurpleAir Debug');
-  
+
   return `
     <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
       <thead>
@@ -1067,7 +1224,10 @@ async function buildPurpleAirSection(adr, pa) {
           <td>Current Closest AQI</td>
           <td style="${cStyle}">
             ${c} (${cat})
-            <a href="#" data-debug="${encodeURIComponent(debugHTML)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
+            <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
+               onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
+               [details]
+            </a>
           </td>
         </tr>
         <tr>
