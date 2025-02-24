@@ -461,96 +461,132 @@ async function fetchPurpleAirForAddressWithCache(addressRow) {
   return result;
 }
 
-async function fetchPurpleAirForAddress(addressRow){
-  if(!addressRow.purpleair_sensor_ids){
-    return {closest:0, average:0, debug:{fallback:'No sensor IDs'}};
+async function fetchPurpleAirForAddress(addressRow) {
+  if (!addressRow.purpleair_sensor_ids) {
+    return { closest: 0, average: 0, debug: { fallback: 'No sensor IDs' } };
   }
-  const showOnly=addressRow.purpleair_sensor_ids;
-  if(!showOnly){
-    return {closest:0, average:0, debug:{fallback:'No sensor IDs string'}};
+  const showOnly = addressRow.purpleair_sensor_ids;
+  if (!showOnly) {
+    return { closest: 0, average: 0, debug: { fallback: 'No sensor IDs string' } };
   }
-  const fields='sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0,pm2.5,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
-  const resp=await axios.get('https://api.purpleair.com/v1/sensors',{
-    headers:{'X-API-Key': process.env.PURPLEAIR_API_KEY},
-    params:{ location_type:0, show_only:showOnly, fields }
+
+  // 1) Use pm2.5_cf_1 and pm1.0_cf_1 in the fields parameter
+  const fields = 'sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0_cf_1,pm2.5_cf_1,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
+
+  const resp = await axios.get('https://api.purpleair.com/v1/sensors', {
+    headers: { 'X-API-Key': process.env.PURPLEAIR_API_KEY },
+    params: {
+      location_type: 0,
+      show_only: showOnly,
+      fields
+    }
   });
-  const data=resp.data?.data||[];
-  if(!data.length){
-    return {closest:0, average:0, debug:{showOnly,message:'No sensors from show_only'}};
+  const data = resp.data?.data || [];
+  if (!data.length) {
+    return { closest: 0, average: 0, debug: { showOnly, message: 'No sensors from show_only' } };
   }
 
-  let sensorDetails = data.map(arr=>{
-    return {
-      sensorIndex: arr[0],
-      lastSeen: arr[1],
-      lat: arr[2],
-      lon: arr[3],
-      uptime: arr[4],
-      confidence: arr[5],
-      voc: arr[6],
-      pm1_0: arr[7],
-      pm2_5: arr[8],
-      pm2_5_60m: arr[9],
-      pm2_5_alt: arr[10],
-      pm10_0: arr[11],
-      position_rating: arr[12],
-      ozone1: arr[13]
-    };
-  });
+  // 2) Build sensor objects. Notice pm1.0_cf_1 => pm1_0, pm2.5_cf_1 => pm2_5
+  let sensorDetails = data.map(arr => ({
+    sensorIndex: arr[0],
+    lastSeen: arr[1],
+    lat: arr[2],
+    lon: arr[3],
+    uptime: arr[4],
+    confidence: arr[5],
+    voc: arr[6],
+    pm1_0: arr[7],          // from "pm1.0_cf_1"
+    pm2_5: arr[8],          // from "pm2.5_cf_1"
+    pm2_5_60m: arr[9],
+    pm2_5_alt: arr[10],
+    pm10_0: arr[11],
+    position_rating: arr[12],
+    ozone1: arr[13]
+  }));
 
-  let closestDist=Infinity, sum=0, count=0, closestVal=0;
-  const debugSensors=[];
+  let closestDist = Infinity, sum = 0, count = 0, closestVal = 0;
+  const debugSensors = [];
 
-  sensorDetails.forEach(s=>{
-    s.distMiles = distanceMiles(addressRow.lat,addressRow.lon,s.lat,s.lon);
+  const nowSec = Math.floor(Date.now() / 1000);
 
-+   // If pm2_5 is null, fallback to pm2_5_60m or pm2_5_alt
-   let rawPM25 = s.pm2_5;
-   if (rawPM25 == null) {
-     if (s.pm2_5_60m != null) {
-       rawPM25 = s.pm2_5_60m;
-     } else if (s.pm2_5_alt != null) {
-       rawPM25 = s.pm2_5_alt;
-     }
-   }
-   s.aqi = pm25toAQI(rawPM25 || 0);
+  sensorDetails.forEach(s => {
+    // Only consider sensors last updated within 1 hour
+    const ageSec = nowSec - s.lastSeen;
+    if (ageSec > 3600) {
+      return; // skip older sensor
+    }
 
+    // Compute distance in miles
+    s.distMiles = distanceMiles(addressRow.lat, addressRow.lon, s.lat, s.lon);
+
+    // 3) Fallback logic if pm2_5_cf_1 is null => use pm2_5_60m => pm2_5_alt => 0
+    let rawPM25 = s.pm2_5;
+    if (rawPM25 == null) {
+      if (s.pm2_5_60m != null) {
+        rawPM25 = s.pm2_5_60m;
+      } else if (s.pm2_5_alt != null) {
+        rawPM25 = s.pm2_5_alt;
+      } else {
+        rawPM25 = 0;
+      }
+    }
+
+    // Compute AQI using pm25toAQI
+    s.aqi = pm25toAQI(rawPM25);
+
+    // Add to total for average
+    sum += s.aqi;
+    count++;
+
+    // Track the physically closest sensor's AQI
+    if (s.distMiles < closestDist) {
+      closestDist = s.distMiles;
+      closestVal = s.aqi;
+    }
+
+    // 4) Update debug to show lat/lon, the final AQI, and clarify distance is in miles
     debugSensors.push({
       sensorIndex: s.sensorIndex,
-      pm2_5: s.pm2_5,
+      lat: s.lat,
+      lon: s.lon,
+      distMiles: s.distMiles,      // explicitly in miles
+      pm2_5_cf_1: s.pm2_5,        // originally "pm2.5_cf_1"
       pm2_5_60m: s.pm2_5_60m,
       pm2_5_alt: s.pm2_5_alt,
       pm10_0: s.pm10_0,
       ozone1: s.ozone1,
       aqi: s.aqi,
-      dist: s.distMiles,
       lastSeen: s.lastSeen,
-      confidence: s.confidence,
-      voc: s.voc
+      voc: s.voc,
+      confidence: s.confidence
     });
-    sum += s.aqi; 
-    count++;
-    if(s.distMiles < closestDist){
-      closestDist = s.distMiles;
-      closestVal = s.aqi;
-    }
   });
 
-  if(!count){
-    return {closest:0,average:0,debug:{showOnly,sensorCount:0,message:'All sensors filtered out'}};
+  if (count === 0) {
+    // If all sensors were older than 1 hour, or none left after filtering
+    return {
+      closest: 0,
+      average: 0,
+      debug: {
+        showOnly,
+        sensorCount: 0,
+        message: 'All sensors older than 1h or filtered out'
+      }
+    };
   }
-  const avg = Math.round(sum/count);
+
+  const avg = Math.round(sum / count);
 
   return {
     closest: closestVal,
     average: avg,
     debug: {
       approach: 'show_only',
-      sensorCount: count,
       lat: addressRow.lat,
       lon: addressRow.lon,
-      sensors: debugSensors,
-      nearestDistance: closestDist
+      sensorCount: count,
+      nearestDistance: closestDist,
+      sensors: debugSensors
     }
   };
 }
