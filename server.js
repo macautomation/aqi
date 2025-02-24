@@ -828,9 +828,6 @@ app.get('/api/myReport', ensureAuth, async (req, res) => {
       if (ow) {
         const d = ow.data_json || {};
         const debugLink = buildDebugPopupLink(d.debug || {}, 'OpenWeather Debug');
-        const c24 = (d.ow24hrTemp !== undefined)
-          ? d.ow24hrTemp
-          : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'OpenWeather'))}`;
         html += `
           <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
             <thead>
