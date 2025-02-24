@@ -720,40 +720,41 @@ app.get('/api/list-addresses', ensureAuth, async(req,res)=>{
 });
 
 // myReport => returns the HTML snippet
-app.get('/api/myReport', ensureAuth, async(req,res)=>{
-  try{
-    const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[req.user.id]);
-    if(!addrRes.rows.length){
-      return res.json({ error:'No addresses. Please add an address.' });
+app.get('/api/myReport', ensureAuth, async (req, res) => {
+  try {
+    const addrRes = await query('SELECT * FROM user_addresses WHERE user_id=$1', [req.user.id]);
+    if (!addrRes.rows.length) {
+      return res.json({ error: 'No addresses. Please add an address.' });
     }
-    let html='';
-    for(const adr of addrRes.rows){
-      html+=`<h4>Address: ${adr.address}</h4>`;
-      if(!adr.lat||!adr.lon){
-        html+=`<p>(No lat/lon, cannot produce AQI)</p>`;
+    let html = "";
+    for (const adr of addrRes.rows) {
+      html += '<h4>Address: ' + adr.address + '</h4>';
+      if (!adr.lat || !adr.lon) {
+        html += '<p>(No lat/lon, cannot produce AQI)</p>';
         continue;
       }
-      let an=await latestSourceRow(adr.id,'AirNow');
-      let pa=await latestSourceRow(adr.id,'PurpleAir');
-      let ow=await latestSourceRow(adr.id,'OpenWeather');
+      let an = await latestSourceRow(adr.id, 'AirNow');
+      let pa = await latestSourceRow(adr.id, 'PurpleAir');
+      let ow = await latestSourceRow(adr.id, 'OpenWeather');
 
       // AirNow
-      if(an){
-        const c=an.aqi_closest||0, r=an.aqi_average||0;
-        const cat=colorCodeAQI(c);
-        const cStyle=getAQIColorStyle(c);
-        const rStyle=getAQIColorStyle(r);
-        let c24=an.data_json?.closest24hrAvg;
-        let r24=an.data_json?.radius24hrAvg;
-        if(c24===undefined){
-          const earliest=await earliestTimestampForAddress(adr.id,'AirNow');
-          c24=`Available at ${format24hrAvailable(earliest)}`;
+      if (an) {
+        const c = an.aqi_closest || 0;
+        const r = an.aqi_average || 0;
+        const cat = colorCodeAQI(c);
+        const cStyle = getAQIColorStyle(c);
+        const rStyle = getAQIColorStyle(r);
+        let c24 = an.data_json?.closest24hrAvg;
+        let r24 = an.data_json?.radius24hrAvg;
+        if (c24 === undefined) {
+          const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
+          c24 = 'Available at ' + format24hrAvailable(earliest);
         }
-        if(r24===undefined){
-          const earliest=await earliestTimestampForAddress(adr.id,'AirNow');
-          r24=`Available at ${format24hrAvailable(earliest)}`;
+        if (r24 === undefined) {
+          const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
+          r24 = 'Available at ' + format24hrAvailable(earliest);
         }
-        const debugLink=buildDebugPopupLink(an.data_json?.debug||{}, 'AirNow Debug');
+        const debugLink = buildDebugPopupLink(an.data_json?.debug || {}, 'AirNow Debug');
         html += '<p>AirNow => ' +
           'Closest <span style="' + cStyle + '">' + c + ' (' + cat + ')</span> ' +
           '<a href="#" onclick="showDetailPopup(' + JSON.stringify(debugLink) + ', event);return false;">[more detail]</a>, ' +
@@ -761,30 +762,31 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
           '24hrClosestAvg=' + c24 + ', 24hrRadiusAvg=' + r24 +
           '</p>';
       } else {
-        html+=`<p>AirNow => No data</p>`;
+        html += '<p>AirNow => No data</p>';
       }
 
       // PurpleAir
-      if(pa){
-        const c=pa.aqi_closest||0, r=pa.aqi_average||0;
-        const cat=colorCodeAQI(c);
-        const cStyle=getAQIColorStyle(c);
-        const rStyle=getAQIColorStyle(r);
-        let c24=pa.data_json?.closest24hrAvg;
-        let r24=pa.data_json?.radius24hrAvg;
-        if(c24===undefined){
-          const earliest=await earliestTimestampForAddress(adr.id,'PurpleAir');
-          c24=`Available at ${format24hrAvailable(earliest)}`;
+      if (pa) {
+        const c = pa.aqi_closest || 0;
+        const r = pa.aqi_average || 0;
+        const cat = colorCodeAQI(c);
+        const cStyle = getAQIColorStyle(c);
+        const rStyle = getAQIColorStyle(r);
+        let c24 = pa.data_json?.closest24hrAvg;
+        let r24 = pa.data_json?.radius24hrAvg;
+        if (c24 === undefined) {
+          const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
+          c24 = 'Available at ' + format24hrAvailable(earliest);
         }
-        if(r24===undefined){
-          const earliest=await earliestTimestampForAddress(adr.id,'PurpleAir');
-          r24=`Available at ${format24hrAvailable(earliest)}`;
+        if (r24 === undefined) {
+          const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
+          r24 = 'Available at ' + format24hrAvailable(earliest);
         }
-        let nearestDist='';
-        if(pa.data_json?.debug?.nearestDistance!==undefined){
-          nearestDist=`Nearest sensor is ${pa.data_json.debug.nearestDistance.toFixed(1)} miles away. `;
+        let nearestDist = '';
+        if (pa.data_json?.debug?.nearestDistance !== undefined) {
+          nearestDist = 'Nearest sensor is ' + pa.data_json.debug.nearestDistance.toFixed(1) + ' miles away. ';
         }
-        const debugLink=buildDebugPopupLink(pa.data_json?.debug||{}, 'PurpleAir Debug');
+        const debugLink = buildDebugPopupLink(pa.data_json?.debug || {}, 'PurpleAir Debug');
         html += '<p>PurpleAir => ' +
           'Closest <span style="' + cStyle + '">' + c + ' (' + cat + ')</span> ' +
           '<a href="#" onclick="showDetailPopup(' + JSON.stringify(debugLink) + ', event);return false;">[more detail]</a>, ' +
@@ -793,17 +795,17 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
           '<br>' + nearestDist +
           '</p>';
       } else {
-        html+=`<p>PurpleAir => No data</p>`;
+        html += '<p>PurpleAir => No data</p>';
       }
 
       // OpenWeather
-      if(ow){
-        const d=ow.data_json||{};
-        const debugLink=buildDebugPopupLink(d.debug||{}, 'OpenWeather Debug');
-        let c24=d.ow24hrTemp;
-        if(c24===undefined){
-          const earliest=await earliestTimestampForAddress(adr.id,'OpenWeather');
-          c24=`Available at ${format24hrAvailable(earliest)}`;
+      if (ow) {
+        const d = ow.data_json || {};
+        const debugLink = buildDebugPopupLink(d.debug || {}, 'OpenWeather Debug');
+        let c24 = d.ow24hrTemp;
+        if (c24 === undefined) {
+          const earliest = await earliestTimestampForAddress(adr.id, 'OpenWeather');
+          c24 = 'Available at ' + format24hrAvailable(earliest);
         }
         html += '<p>OpenWeather => ' +
           'Temp=' + (d.tempF || 0) + 'F, Wind=' + (d.windSpeed || 0) + ' mph from ' + (d.windDir || '??') + ' (' + (d.windDeg || 0) + '°), ' +
@@ -811,15 +813,15 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
           '<br>24hrAvgTemp=' + c24 +
           '</p>';
       } else {
-        html+=`<p>OpenWeather => No data</p>`;
+        html += '<p>OpenWeather => No data</p>';
       }
     }
-    res.json({ html });
-  } catch(e){
+    res.json({ html: html });
+  } catch (e) {
     console.error('[myReport error]', e);
-    res.status(500).json({ error:'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
-}
+});
 
 function buildDebugPopupLink(debugObj, title) {
   const raw = JSON.stringify(debugObj, null, 2);
