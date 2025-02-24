@@ -706,140 +706,161 @@ app.get('/api/list-addresses', ensureAuth, async(req,res)=>{
 });
 
 // /api/myReport => use a table-based approach for each source, plus fancy debug pop-up
-app.get('/api/myReport', ensureAuth, async(req,res)=>{
-  try{
-    const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[req.user.id]);
-    if(!addrRes.rows.length){
-      return res.json({ error:'No addresses. Please add an address.' });
+app.get('/api/myReport', ensureAuth, async (req, res) => {
+  try {
+    const addrRes = await query('SELECT * FROM user_addresses WHERE user_id=$1', [req.user.id]);
+    if (!addrRes.rows.length) {
+      return res.json({ error: 'No addresses. Please add an address.' });
     }
-    let html='';
-    for(const adr of addrRes.rows){
-      html+=`<h4>Address: ${adr.address}</h4>`;
-      if(!adr.lat||!adr.lon){
-        html+=`<p>(No lat/lon, cannot produce AQI)</p>`;
+    let html = '';
+    for (const adr of addrRes.rows) {
+      html += `<h4>Address: ${adr.address}</h4>`;
+      if (!adr.lat || !adr.lon) {
+        html += `<p>(No lat/lon, cannot produce AQI)</p>`;
         continue;
       }
-      let an=await latestSourceRow(adr.id,'AirNow');
-      let pa=await latestSourceRow(adr.id,'PurpleAir');
-      let ow=await latestSourceRow(adr.id,'OpenWeather');
+      let an = await latestSourceRow(adr.id, 'AirNow');
+      let pa = await latestSourceRow(adr.id, 'PurpleAir');
+      let ow = await latestSourceRow(adr.id, 'OpenWeather');
 
       // AIRNOW
-      if(an){
-        const c=an.aqi_closest||0;
-        const r=an.aqi_average||0;
-        const c24=(an.data_json?.closest24hrAvg!==undefined)
+      if (an) {
+        const c = an.aqi_closest || 0;
+        const r = an.aqi_average || 0;
+        const c24 = (an.data_json?.closest24hrAvg !== undefined)
           ? an.data_json.closest24hrAvg
-          : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id,'AirNow'))}`;
-        const r24=(an.data_json?.radius24hrAvg!==undefined)
+          : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'AirNow'))}`;
+        const r24 = (an.data_json?.radius24hrAvg !== undefined)
           ? an.data_json.radius24hrAvg
-          : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id,'AirNow'))}`;
-        const cat=colorCodeAQI(c);
-        const cStyle=getAQIColorStyle(c);
-        const rStyle=getAQIColorStyle(r);
-        const c24Style=(typeof c24==='number')?getAQIColorStyle(c24):'';
-        const r24Style=(typeof r24==='number')?getAQIColorStyle(r24):'';
-
-        const debugLink=buildDebugPopupLink(an.data_json?.debug||{}, 'AirNow Debug');
-        html+=`
+          : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'AirNow'))}`;
+        const cat = colorCodeAQI(c);
+        const cStyle = getAQIColorStyle(c);
+        const rStyle = getAQIColorStyle(r);
+        const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
+        const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
+        const debugLink = buildDebugPopupLink(an.data_json?.debug || {}, 'AirNow Debug');
+        html += `
           <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
             <thead>
               <tr style="background:#f0f0f0;"><th colspan="2">AirNow</th></tr>
             </thead>
             <tbody>
-              <tr><td>Current Closest AQI</td>
-                  <td style="${cStyle}">${c} (${cat})
-                    <a href="#" onclick="showDetailPopup(\`${debugLink}\`, event);return false;">[details]</a>
-                  </td></tr>
-              <tr><td>Current Radius Average</td>
-                  <td style="${rStyle}">${r}</td></tr>
-              <tr><td>Closest 24hr Average</td>
-                  <td style="${c24Style}">${c24}</td></tr>
-              <tr><td>Radius 24hr Average</td>
-                  <td style="${r24Style}">${r24}</td></tr>
+              <tr>
+                <td>Current Closest AQI</td>
+                <td style="${cStyle}">
+                  ${c} (${cat})
+                  <a href="#" data-debug="${encodeURIComponent(debugLink)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
+                </td>
+              </tr>
+              <tr>
+                <td>Current Radius Average</td>
+                <td style="${rStyle}">${r}</td>
+              </tr>
+              <tr>
+                <td>Closest 24hr Average</td>
+                <td style="${c24Style}">${c24}</td>
+              </tr>
+              <tr>
+                <td>Radius 24hr Average</td>
+                <td style="${r24Style}">${r24}</td>
+              </tr>
             </tbody>
           </table>
         `;
       } else {
-        html+=`<p>AirNow => No data</p>`;
+        html += `<p>AirNow => No data</p>`;
       }
 
       // PURPLEAIR
-      if(pa){
-        const c=pa.aqi_closest||0;
-        const r=pa.aqi_average||0;
-        const c24=(pa.data_json?.closest24hrAvg!==undefined)
+      if (pa) {
+        const c = pa.aqi_closest || 0;
+        const r = pa.aqi_average || 0;
+        const c24 = (pa.data_json?.closest24hrAvg !== undefined)
           ? pa.data_json.closest24hrAvg
-          : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id,'PurpleAir'))}`;
-        const r24=(pa.data_json?.radius24hrAvg!==undefined)
+          : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'PurpleAir'))}`;
+        const r24 = (pa.data_json?.radius24hrAvg !== undefined)
           ? pa.data_json.radius24hrAvg
-          : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id,'PurpleAir'))}`;
-        const cat=colorCodeAQI(c);
-        const cStyle=getAQIColorStyle(c);
-        const rStyle=getAQIColorStyle(r);
-        const c24Style=(typeof c24==='number')?getAQIColorStyle(c24):'';
-        const r24Style=(typeof r24==='number')?getAQIColorStyle(r24):'';
-        let nearestLine='';
-        if(pa.data_json?.debug?.nearestDistance!==undefined){
-          nearestLine=`<br>Nearest sensor is ${pa.data_json.debug.nearestDistance.toFixed(1)} miles away`;
+          : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'PurpleAir'))}`;
+        const cat = colorCodeAQI(c);
+        const cStyle = getAQIColorStyle(c);
+        const rStyle = getAQIColorStyle(r);
+        const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
+        const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
+        let nearestLine = '';
+        if (pa.data_json?.debug?.nearestDistance !== undefined) {
+          nearestLine = `<br>Nearest sensor is ${pa.data_json.debug.nearestDistance.toFixed(1)} miles away`;
         }
-        const debugLink=buildDebugPopupLink(pa.data_json?.debug||{}, 'PurpleAir Debug');
-        html+=`
+        const debugLink = buildDebugPopupLink(pa.data_json?.debug || {}, 'PurpleAir Debug');
+        html += `
           <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
             <thead>
               <tr style="background:#f0f0f0;"><th colspan="2">PurpleAir</th></tr>
             </thead>
             <tbody>
-              <tr><td>Current Closest AQI</td>
-                  <td style="${cStyle}">${c} (${cat})
-                    <a href="#" onclick="showDetailPopup(\`${debugLink}\`, event);return false;">[details]</a>
-                  </td></tr>
-              <tr><td>Current Radius Average</td>
-                  <td style="${rStyle}">${r}</td></tr>
-              <tr><td>Closest 24hr Average</td>
-                  <td style="${c24Style}">${c24}</td></tr>
-              <tr><td>Radius 24hr Average</td>
-                  <td style="${r24Style}">${r24}</td></tr>
+              <tr>
+                <td>Current Closest AQI</td>
+                <td style="${cStyle}">
+                  ${c} (${cat})
+                  <a href="#" data-debug="${encodeURIComponent(debugLink)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
+                </td>
+              </tr>
+              <tr>
+                <td>Current Radius Average</td>
+                <td style="${rStyle}">${r}</td>
+              </tr>
+              <tr>
+                <td>Closest 24hr Average</td>
+                <td style="${c24Style}">${c24}</td>
+              </tr>
+              <tr>
+                <td>Radius 24hr Average</td>
+                <td style="${r24Style}">${r24}</td>
+              </tr>
             </tbody>
           </table>
           <p>${nearestLine}</p>
         `;
       } else {
-        html+=`<p>PurpleAir => No data</p>`;
+        html += `<p>PurpleAir => No data</p>`;
       }
 
       // OPENWEATHER
-      if(ow){
-        const d=ow.data_json||{};
-        let c24=(d.ow24hrTemp!==undefined)
+      if (ow) {
+        const d = ow.data_json || {};
+        const debugLink = buildDebugPopupLink(d.debug || {}, 'OpenWeather Debug');
+        const c24 = (d.ow24hrTemp !== undefined)
           ? d.ow24hrTemp
-          : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id,'OpenWeather'))}`;
-        const debugLink=buildDebugPopupLink(d.debug||{}, 'OpenWeather Debug');
-
-        html+=`
+          : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'OpenWeather'))}`;
+        html += `
           <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
             <thead>
               <tr style="background:#f0f0f0;"><th colspan="2">OpenWeather</th></tr>
             </thead>
             <tbody>
-              <tr><td>Current Hourly</td>
-                  <td>Temp=${d.tempF||0}F, Wind=${d.windSpeed||0} mph from ${d.windDir||'??'} (${d.windDeg||0}°)
-                    <a href="#" onclick="showDetailPopup(\`${debugLink}\`, event);return false;">[details]</a>
-                  </td></tr>
-              <tr><td>24hr Average</td>
-                  <td>Temp=${c24}F (assuming we store that if desired)</td></tr>
+              <tr>
+                <td>Current Hourly</td>
+                <td>
+                  Temp=${d.tempF || 0}F, Wind=${d.windSpeed || 0} mph from ${d.windDir || '??'} (${d.windDeg || 0}°)
+                  <a href="#" data-debug="${encodeURIComponent(debugLink)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
+                </td>
+              </tr>
+              <tr>
+                <td>24hr Average</td>
+                <td>Temp=${c24}F (assuming we store that if desired)</td>
+              </tr>
             </tbody>
           </table>
         `;
       } else {
-        html+=`<p>OpenWeather => No data</p>`;
+        html += `<p>OpenWeather => No data</p>`;
       }
     }
     res.json({ html });
-  } catch(e){
+  } catch (e) {
     console.error('[myReport error]', e);
-    res.status(500).json({ error:'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
-}
+});
 
 function buildDebugPopupLink(debugObj, title){
   const raw=JSON.stringify(debugObj,null,2);
