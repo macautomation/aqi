@@ -1370,6 +1370,55 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
   }
 });
 
+// Place this near your other route definitions in server.js:
+app.get('/api/getMapUrl', async (req, res) => {
+  const { source, lat, lon, data } = req.query;
+  if (!source || !lat || !lon) {
+    return res.status(400).json({ error: 'Missing required parameters' });
+  }
+  try {
+    let url = "";
+    const adr = { lat: parseFloat(lat), lon: parseFloat(lon) };
+    if (source === "OpenWeather") {
+      let owData = {};
+      if (data) {
+        try {
+          owData = JSON.parse(decodeURIComponent(data));
+        } catch (e) {
+          console.error("Error parsing OpenWeather data:", e);
+        }
+      }
+      url = generateGoogleMapsUrlForOpenWeather(adr, { data_json: owData });
+    } else if (source === "AirNow") {
+      let airData = {};
+      if (data) {
+        try {
+          airData = JSON.parse(decodeURIComponent(data));
+        } catch (e) {
+          console.error("Error parsing AirNow data:", e);
+        }
+      }
+      url = generateGoogleMapsUrlForAirNow(adr, { data_json: airData });
+    } else if (source === "PurpleAir") {
+      let paData = {};
+      if (data) {
+        try {
+          paData = JSON.parse(decodeURIComponent(data));
+        } catch (e) {
+          console.error("Error parsing PurpleAir data:", e);
+        }
+      }
+      url = generateGoogleMapsUrlForPurpleAir(adr, { data_json: paData });
+    } else {
+      return res.status(400).json({ error: "Unknown source" });
+    }
+    return res.json({ url });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
 async function buildAirNowSection(adr, an) {
   if (!an) return `<p>AirNow => No data</p>`;
 
@@ -1555,7 +1604,7 @@ async function buildOpenWeatherSection(adr, ow) {
     </table>
   `;
   // Instead of inline map, we now include the OpenWeather map below the table.
-  const mapHtml = `<div style="margin-top:10px;"><img src="${generateGoogleMapsUrlForOpenWeather_Client(adr, ow)}" alt="OpenWeather Map" style="max-width:100%;"></div>`;
+  const mapHtml = `<div style="margin-top:10px;"><img src="${generateGoogleMapsUrlForOpenWeather(adr, ow)}" alt="OpenWeather Map" style="max-width:100%;"></div>`;
   return tableHtml + mapHtml;
 }
 
