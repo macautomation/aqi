@@ -322,7 +322,17 @@ function generateGoogleMapsUrlForOpenWeather(adr, ow) {
   markers.push(`color:orange|label:${windLabel}|${adr.lat},${adr.lon + offset}`);
   markers.push(`color:orange|label:${windLabel}|${adr.lat - offset},${adr.lon}`);
   
-  // Temperature marker: show temperature in bottom right corner (using an offset from user)\n  const tempF = (ow.data_json && ow.data_json.tempF) ? ow.data_json.tempF : 0;\n  markers.push(`color:purple|label:T:${tempF}|${adr.lat - 0.01},${adr.lon + 0.01}`);\n\n  // For OpenWeather, we use a fixed visible area around the user\n  const visibleParam = `${adr.lat - 0.02},${adr.lon - 0.02}|${adr.lat + 0.02},${adr.lon + 0.02}`;\n\n  const markerParams = markers.map(m => `markers=${encodeURIComponent(m)}`).join('&');\n  const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;\n  return url;\n}
+  // Temperature marker: show temperature in bottom right corner (using an offset from user)
+  const tempF = (ow.data_json && ow.data_json.tempF) ? ow.data_json.tempF : 0;
+  markers.push(`color:purple|label:T:${tempF}|${adr.lat - 0.01},${adr.lon + 0.01}`);
+  
+  // For OpenWeather, we use a fixed visible area around the user
+  const visibleParam = `${adr.lat - 0.02},${adr.lon - 0.02}|${adr.lat + 0.02},${adr.lon + 0.02}`;
+  
+  const markerParams = markers.map(m => `markers=${encodeURIComponent(m)}`).join('&');
+  const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
+  return url;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Passport: local, google, apple
