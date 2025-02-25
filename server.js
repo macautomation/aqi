@@ -238,6 +238,93 @@ function getCardinal(deg){
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Map Display
+////////////////////////////////////////////////////////////////////////////////
+
+// Helper to convert wind degrees to an arrow symbol (rounded to nearest 45°)
+function getWindArrow(deg) {
+  const directions = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+  const idx = Math.round(deg / 45) % 8;
+  return directions[idx];
+}
+
+// Generate a Google Static Maps URL for AirNow
+function generateGoogleMapsUrlForAirNow(adr, an) {
+  const key = process.env.GOOGLE_MAPS_API_KEY || '';
+  let markers = [];
+  // User home marker
+  markers.push(`color:blue|label:H|${adr.lat},${adr.lon}`);
+  
+  // Determine visible area: if available, take the bounding box from the last AirNow API try.
+  let visibleParam = `${adr.lat},${adr.lon}`;
+  if (an.data_json && an.data_json.debug && an.data_json.debug.tries && an.data_json.debug.tries.length) {
+    const lastTry = an.data_json.debug.tries[an.data_json.debug.tries.length - 1];
+    if (lastTry.boundingBox) {
+      const bb = lastTry.boundingBox;
+      visibleParam = `${bb.minLat},${bb.minLon}|${bb.maxLat},${bb.maxLon}`;
+    }
+  }
+  
+  // Add sensor markers if available (each sensor’s marker shows its AQI)
+  if (an.data_json && an.data_json.debug && an.data_json.debug.sensors && an.data_json.debug.sensors.length) {
+    an.data_json.debug.sensors.forEach(sensor => {
+      markers.push(`color:red|label:${sensor.aqi}|${sensor.lat},${sensor.lon}`);
+    });
+  }
+  
+  const markerParams = markers.map(m => `markers=${encodeURIComponent(m)}`).join('&');
+  const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
+  return url;
+}
+
+// Generate a Google Static Maps URL for PurpleAir
+function generateGoogleMapsUrlForPurpleAir(adr, pa) {
+  const key = process.env.GOOGLE_MAPS_API_KEY || '';
+  let markers = [];
+  markers.push(`color:blue|label:H|${adr.lat},${adr.lon}`);
+  let latitudes = [], longitudes = [];
+  if (pa.data_json && pa.data_json.debug && pa.data_json.debug.sensors && pa.data_json.debug.sensors.length) {
+    pa.data_json.debug.sensors.forEach(sensor => {
+      markers.push(`color:green|label:${sensor.aqi}|${sensor.lat},${sensor.lon}`);
+      latitudes.push(sensor.lat);
+      longitudes.push(sensor.lon);
+    });
+  }
+  // Compute bounding box from sensor coordinates (or include user location)
+  let visibleParam = `${adr.lat},${adr.lon}`;
+  if (latitudes.length && longitudes.length) {
+    const minLat = Math.min(...latitudes, adr.lat);
+    const maxLat = Math.max(...latitudes, adr.lat);
+    const minLon = Math.min(...longitudes, adr.lon);
+    const maxLon = Math.max(...longitudes, adr.lon);
+    visibleParam = `${minLat},${minLon}|${maxLat},${maxLon}`;
+  }
+  const markerParams = markers.map(m => `markers=${encodeURIComponent(m)}`).join('&');
+  const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
+  return url;
+}
+
+// Generate a Google Static Maps URL for OpenWeather
+function generateGoogleMapsUrlForOpenWeather(adr, ow) {
+  const key = process.env.GOOGLE_MAPS_API_KEY || '';
+  let markers = [];
+  // User home marker
+  markers.push(`color:blue|label:H|${adr.lat},${adr.lon}`);
+  
+  // Wind marker(s): use the wind speed and direction from OpenWeather data
+  const windSpeed = (ow.data_json && ow.data_json.windSpeed) ? ow.data_json.windSpeed : 0;
+  const windDeg = (ow.data_json && ow.data_json.windDeg) ? ow.data_json.windDeg : 0;
+  const arrow = getWindArrow(windDeg);
+  const windLabel = `${arrow}${windSpeed}`;
+  // Place three wind markers with slight offsets around the user's location
+  const offset = 0.005; // about 0.3 miles
+  markers.push(`color:orange|label:${windLabel}|${adr.lat + offset},${adr.lon}`);
+  markers.push(`color:orange|label:${windLabel}|${adr.lat},${adr.lon + offset}`);
+  markers.push(`color:orange|label:${windLabel}|${adr.lat - offset},${adr.lon}`);
+  
+  // Temperature marker: show temperature in bottom right corner (using an offset from user)\n  const tempF = (ow.data_json && ow.data_json.tempF) ? ow.data_json.tempF : 0;\n  markers.push(`color:purple|label:T:${tempF}|${adr.lat - 0.01},${adr.lon + 0.01}`);\n\n  // For OpenWeather, we use a fixed visible area around the user\n  const visibleParam = `${adr.lat - 0.02},${adr.lon - 0.02}|${adr.lat + 0.02},${adr.lon + 0.02}`;\n\n  const markerParams = markers.map(m => `markers=${encodeURIComponent(m)}`).join('&');\n  const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;\n  return url;\n}
+
+////////////////////////////////////////////////////////////////////////////////
 // Passport: local, google, apple
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1275,7 +1362,6 @@ app.get('/api/myReport', ensureAuth, async(req,res)=>{
 });
 
 async function buildAirNowSection(adr, an) {
-  // if there's no row for AirNow, no data
   if (!an) return `<p>AirNow => No data</p>`;
 
   const c = an.aqi_closest || 0;
@@ -1284,10 +1370,8 @@ async function buildAirNowSection(adr, an) {
   const cStyle = getAQIColorStyle(c);
   const rStyle = getAQIColorStyle(r);
 
-  // Instead of data_json?.closest24hrAvg, we read the columns directly:
-  let c24 = an.closest_24hr_avg; 
+  let c24 = an.closest_24hr_avg;
   let r24 = an.radius_24hr_avg;
-
   if (c24 == null) {
     const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
     c24 = `Available at ${format24hrAvailable(earliest)}`;
@@ -1296,48 +1380,88 @@ async function buildAirNowSection(adr, an) {
     const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
     r24 = `Available at ${format24hrAvailable(earliest)}`;
   }
-
   const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
   const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
 
-  // We still show debug from data_json if you want
+  // Show the nearest sensor distance if available.
+  let nearestLine = '';
+  if (an.data_json?.debug?.nearestDistance !== undefined) {
+    nearestLine = `<br>Nearest sensor is ${an.data_json.debug.nearestDistance.toFixed(1)} miles away`;
+  }
+
   const debugObj = an.data_json?.debug || {};
   const debugHTML = buildDebugPopupHTML(debugObj, 'AirNow Debug');
 
   return `
-    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
-      <thead>
-        <tr style="background:#f0f0f0;"><th colspan="2">AirNow</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Current Closest AQI</td>
-          <td style="${cStyle}">
-            ${c} (${cat})
-            <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
-               onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
-               [details]
-            </a>
-          </td>
-        </tr>
-        <tr>
-          <td>Current Radius Average</td>
-          <td style="${rStyle}">${r}</td>
-        </tr>
-        <tr>
-          <td>Closest 24hr Average</td>
-          <td style="${c24Style}">${c24}</td>
-        </tr>
-        <tr>
-          <td>Radius 24hr Average</td>
-          <td style="${r24Style}">${r24}</td>
-        </tr>
-      </tbody>
-    </table>
+    <div style="display:flex; align-items:center;">
+      <table style="border-collapse:collapse;width:50%;margin-bottom:10px;">
+        <thead>
+          <tr style="background:#f0f0f0;"><th colspan="2">AirNow</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Current Closest AQI</td>
+            <td style="${cStyle}">
+              ${c} (${cat})
+              <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
+                 onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
+                 [details]
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td>Current Radius Average</td>
+            <td style="${rStyle}">${r}</td>
+          </tr>
+          <tr>
+            <td>Closest 24hr Average</td>
+            <td style="${c24Style}">${c24}</td>
+          </tr>
+          <tr>
+            <td>Radius 24hr Average</td>
+            <td style="${r24Style}">${r24}</td>
+          </tr>
+          <tr>
+            <td>Nearest Sensor Distance</td>
+            <td>${nearestLine}</td>
+          </tr>
+        </tbody>
+      </table>
+      <img src="${generateGoogleMapsUrlForAirNow(adr, an)}" alt="AirNow Map" style="width: 50%;">
+    </div>
   `;
 }
 
-// REPLACE your entire buildPurpleAirSection function with this:
+// Helper function to generate a Google Static Maps URL for AirNow
+function generateGoogleMapsUrlForAirNow(adr, an) {
+  const key = process.env.GOOGLE_MAPS_API_KEY || '';
+  let markers = [];
+  // User home marker (blue with label "H")
+  markers.push(`color:blue|label:H|${adr.lat},${adr.lon}`);
+
+  // Determine visible area based on the bounding box used in the last API attempt, if available.
+  let visibleParam = `${adr.lat},${adr.lon}`;
+  if (an.data_json && an.data_json.debug && an.data_json.debug.tries && an.data_json.debug.tries.length) {
+    const lastTry = an.data_json.debug.tries[an.data_json.debug.tries.length - 1];
+    if (lastTry.boundingBox) {
+      const bb = lastTry.boundingBox;
+      visibleParam = `${bb.minLat},${bb.minLon}|${bb.maxLat},${bb.maxLon}`;
+    }
+  }
+  
+  // Add sensor markers if available (each marker shows its AQI value)
+  if (an.data_json && an.data_json.debug && an.data_json.debug.sensors && an.data_json.debug.sensors.length) {
+    an.data_json.debug.sensors.forEach(sensor => {
+      markers.push(`color:red|label:${sensor.aqi}|${sensor.lat},${sensor.lon}`);
+    });
+  }
+  
+  const markerParams = markers.map(m => `markers=${encodeURIComponent(m)}`).join('&');
+  const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
+  return url;
+}
+
+// PurpleAir Section
 
 async function buildPurpleAirSection(adr, pa) {
   if (!pa) return `<p>PurpleAir => No data</p>`;
@@ -1348,10 +1472,8 @@ async function buildPurpleAirSection(adr, pa) {
   const cStyle = getAQIColorStyle(c);
   const rStyle = getAQIColorStyle(r);
 
-  // Use the columns if they exist
   let c24 = pa.closest_24hr_avg; 
   let r24 = pa.radius_24hr_avg;
-
   if (c24 == null) {
     const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
     c24 = `Available at ${format24hrAvailable(earliest)}`;
@@ -1360,7 +1482,6 @@ async function buildPurpleAirSection(adr, pa) {
     const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
     r24 = `Available at ${format24hrAvailable(earliest)}`;
   }
-
   const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
   const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
 
@@ -1373,36 +1494,42 @@ async function buildPurpleAirSection(adr, pa) {
   const debugHTML = buildDebugPopupHTML(debugObj, 'PurpleAir Debug');
 
   return `
-    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
-      <thead>
-        <tr style="background:#f0f0f0;"><th colspan="2">PurpleAir</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Current Closest AQI</td>
-          <td style="${cStyle}">
-            ${c} (${cat})
-            <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
-               onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
-               [details]
-            </a>
-          </td>
-        </tr>
-        <tr>
-          <td>Current Radius Average</td>
-          <td style="${rStyle}">${r}</td>
-        </tr>
-        <tr>
-          <td>Closest 24hr Average</td>
-          <td style="${c24Style}">${c24}</td>
-        </tr>
-        <tr>
-          <td>Radius 24hr Average</td>
-          <td style="${r24Style}">${r24}</td>
-        </tr>
-      </tbody>
-    </table>
-    <p>${nearestLine}</p>
+    <div style="display:flex; align-items:center;">
+      <table style="border-collapse:collapse;width:50%;margin-bottom:10px;">
+        <thead>
+          <tr style="background:#f0f0f0;"><th colspan="2">PurpleAir</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Current Closest AQI</td>
+            <td style="${cStyle}">
+              ${c} (${cat})
+              <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
+                 onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
+                 [details]
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td>Current Radius Average</td>
+            <td style="${rStyle}">${r}</td>
+          </tr>
+          <tr>
+            <td>Closest 24hr Average</td>
+            <td style="${c24Style}">${c24}</td>
+          </tr>
+          <tr>
+            <td>Radius 24hr Average</td>
+            <td style="${r24Style}">${r24}</td>
+          </tr>
+          <tr>
+            <td>Nearest Sensor Distance</td>
+            <td>${nearestLine}</td>
+          </tr>
+        </tbody>
+      </table>
+      <img src="${generateGoogleMapsUrlForPurpleAir(adr, pa)}" alt="PurpleAir Map" style="width: 50%;">
+    </div>
   `;
 }
 
@@ -1424,24 +1551,27 @@ async function buildOpenWeatherSection(adr, ow) {
   const debugHTML = buildDebugPopupHTML(debugObj, 'OpenWeather Debug');
   
   return `
-    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
-      <thead>
-        <tr style="background:#f0f0f0;"><th colspan="2">OpenWeather</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Current Hourly</td>
-          <td>
-            Temp=${d.tempF || 0}F, Wind=${d.windSpeed || 0} mph from ${d.windDir || '??'} (${d.windDeg || 0}°)
-            <a href="#" data-debug="${encodeURIComponent(debugHTML)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
-          </td>
-        </tr>
-        <tr>
-          <td>24hr Average</td>
-          <td>Temp=${c24}F (assuming we store that if desired)</td>
-        </tr>
-      </tbody>
-    </table>
+    <div style="display:flex; align-items:center;">
+      <table style="border-collapse:collapse;width:50%;margin-bottom:10px;">
+        <thead>
+          <tr style="background:#f0f0f0;"><th colspan="2">OpenWeather</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Current Hourly</td>
+            <td>
+              Temp=${d.tempF || 0}F, Wind=${d.windSpeed || 0} mph from ${d.windDir || '??'} (${d.windDeg || 0}°)
+              <a href="#" data-debug="${encodeURIComponent(debugHTML)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
+            </td>
+          </tr>
+          <tr>
+            <td>24hr Average</td>
+            <td>Temp=${c24}F (assuming we store that if desired)</td>
+          </tr>
+        </tbody>
+      </table>
+      <img src="${generateGoogleMapsUrlForOpenWeather(adr, ow)}" alt="OpenWeather Map" style="width: 50%;">
+    </div>
   `;
 }
 
