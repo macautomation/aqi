@@ -1195,11 +1195,30 @@ app.post('/api/add-address', ensureAuth, async(req,res)=>{
 });
 
 // delete address
-app.post('/api/delete-address', ensureAuth, async(req,res)=>{
-  const {addressId}=req.body;
-  if(!addressId)return res.status(400).send('No addressId');
-  await query('DELETE FROM user_addresses WHERE id=$1 AND user_id=$2',[addressId, req.user.id]);
-  res.redirect('/html/dashboard.html');
+// REPLACE your entire delete-address route with this:
+app.post('/api/delete-address', ensureAuth, async (req, res) => {
+  const { addressId } = req.body;
+  if (!addressId) return res.status(400).send('No addressId');
+
+  try {
+    // 1) Delete references in address_hourly_data
+    await query(
+      'DELETE FROM address_hourly_data WHERE address_id = $1 AND user_id = $2',
+      [addressId, req.user.id]
+    );
+
+    // 2) Delete from user_addresses
+    await query(
+      'DELETE FROM user_addresses WHERE id = $1 AND user_id = $2',
+      [addressId, req.user.id]
+    );
+
+    // 3) Done
+    return res.redirect('/html/dashboard.html');
+  } catch (err) {
+    console.error('[delete-address error]', err);
+    return res.status(500).send('Error deleting address');
+  }
 });
 
 // set-aqi-radius
@@ -1491,28 +1510,42 @@ app.post('/api/reset', async(req,res)=>{
 // delete account
 ////////////////////////////////////////////////////////////////////////////////
 
-app.post('/api/delete-account', ensureAuth, async(req,res)=>{
-  const userId=req.user.id;
-  const {rows}=await query('SELECT email FROM users WHERE id=$1',[userId]);
-  if(!rows.length){
-    req.logout(()=>res.redirect('/index.html'));
-    return;
-  }
-  const userEmail=rows[0].email;
-  await query('DELETE FROM user_addresses WHERE user_id=$1',[userId]);
-  await query('DELETE FROM users WHERE id=$1',[userId]);
-  req.logout(()=>{
-    sendEmail(userEmail,'Account Deleted',`Your account is deleted.\nNo more emails.\nIf you want to sign up again,\njust do so from the main site.`)
-      .catch(e=>console.error('[delete-account email]', e));
-    res.redirect('/index.html');
-  });
-});
+// REPLACE your entire delete-account route with this:
+app.post('/api/delete-account', ensureAuth, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    // 1) Find the user’s email for the farewell message
+    const { rows } = await query('SELECT email FROM users WHERE id=$1', [userId]);
+    if (!rows.length) {
+      // If user not found, just log them out
+      return req.logout(() => res.redirect('/index.html'));
+    }
+    const userEmail = rows[0].email;
 
-// logout
-app.get('/logout',(req,res)=>{
-  req.logout(()=>{
-    res.redirect('/index.html');
-  });
+    // 2) Delete rows in address_hourly_data => because they reference addresses
+    await query('DELETE FROM address_hourly_data WHERE user_id=$1', [userId]);
+
+    // 3) Delete addresses
+    await query('DELETE FROM user_addresses WHERE user_id=$1', [userId]);
+
+    // 4) Finally, delete the user row
+    await query('DELETE FROM users WHERE id=$1', [userId]);
+
+    // 5) Log them out, then send the farewell email asynchronously
+    req.logout(() => {
+      sendEmail(
+        userEmail,
+        'Account Deleted',
+        `Your account is deleted.\nNo more emails.\nIf you want to sign up again, just do so from the main site.`
+      ).catch(e => console.error('[delete-account email]', e));
+
+      // 6) Redirect to home
+      res.redirect('/index.html');
+    });
+  } catch (err) {
+    console.error('[delete-account error]', err);
+    return res.status(500).send('Error deleting account');
+  }
 });
 
 ////////////////////////////////////////////////////////////////////////////////
