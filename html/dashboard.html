@@ -12,7 +12,6 @@
     #reportArea { margin:10px 0; }
     .loadingGif { width:50px; display:block; margin:10px auto; }
     .btn { padding:10px; margin-top:10px; cursor:pointer; }
-
     /* pop-up debug or additional data */
     #detailPopup {
       display:none;
@@ -23,9 +22,7 @@
       z-index:9999;
       max-width:300px;
     }
-    #detailPopup h3 {
-      margin-top:0;
-    }
+    #detailPopup h3 { margin-top:0; }
   </style>
 </head>
 <body>
@@ -56,7 +53,6 @@
     <form id="dailyTimeForm">
       <label for="dailyHour">Hour (0-23):</label>
       <input type="number" id="dailyHour" min="0" max="23" value="8" style="width:60px;">
-
       <label for="dailyMinute">Minute:</label>
       <select id="dailyMinute">
         <option value="0">00</option>
@@ -101,279 +97,275 @@
   </p>
 </div>
 
-<!-- Our detail popup -->
+<!-- Detail popup for debug info and map popups -->
 <div id="detailPopup"></div>
 
 <script>
-async function fetchJSON(url, opts){
-  const resp=await fetch(url, opts);
-  if(!resp.ok){
-    if(resp.status===401){
-      alert('Not authenticated, redirecting to login...');
-      window.location='login.html';
-      return null;
-    }
-    const txt=await resp.text();
-    throw new Error(`HTTP ${resp.status} - ${txt}`);
-  }
-  return resp.json();
-}
-const addressesList=document.getElementById('addressesList');
-const reportArea=document.getElementById('reportArea');
-const loadingMsg=document.getElementById('loadingMsg');
-const updateBtn=document.getElementById('updateNowBtn');
+  // Set your client-side Google Maps API key:
+  window.GOOGLE_MAPS_API_KEY = 'YOUR_GOOGLE_MAPS_API_KEY_HERE';
 
-function showLoading(){
-  loadingMsg.style.display='block';
-  reportArea.innerHTML='';
-}
-function hideLoading(){
-  loadingMsg.style.display='none';
-}
-
-async function loadAddresses(){
-  try{
-    const arr=await fetchJSON('/api/list-addresses');
-    if(!arr) return;
-    if(!arr.length){
-      addressesList.innerText='No addresses. Please add one above.';
-    } else {
-      let html='<ul>';
-      for(const a of arr){
-        html+=`<li>${a.address} ${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
-          <form method="post" action="/api/delete-address" style="display:inline;">
-            <input type="hidden" name="addressId" value="${a.id}">
-            <button type="submit" style="margin-left:10px;">Delete</button>
-          </form>
-        </li>`;
+  async function fetchJSON(url, opts) {
+    const resp = await fetch(url, opts);
+    if (!resp.ok) {
+      if (resp.status === 401) {
+        alert('Not authenticated, redirecting to login...');
+        window.location = 'login.html';
+        return null;
       }
-      html+='</ul>';
-      addressesList.innerHTML=html;
+      const txt = await resp.text();
+      throw new Error(`HTTP ${resp.status} - ${txt}`);
     }
-  } catch(e){
-    addressesList.innerText='Error: '+e;
+    return resp.json();
   }
-}
-async function loadReport(){
-  try{
-    const data=await fetchJSON('/api/myReport');
-    if(!data) return;
-    if(data.error){
-      reportArea.innerText='Error: '+data.error;
-    } else {
-      reportArea.innerHTML=data.html || 'No report.';
-    }
-  } catch(e){
-    reportArea.innerText='Error: '+e;
+
+  const addressesList = document.getElementById('addressesList');
+  const reportArea = document.getElementById('reportArea');
+  const loadingMsg = document.getElementById('loadingMsg');
+  const updateBtn = document.getElementById('updateNowBtn');
+
+  function showLoading() {
+    loadingMsg.style.display = 'block';
+    reportArea.innerHTML = '';
   }
-}
-async function updateNow(){
-  showLoading();
-  try{
-    const data=await fetchJSON('/api/report-now',{method:'POST'});
-    hideLoading();
-    if(!data) return;
-    if(data.error){
-      reportArea.innerText='Error: '+data.error;
-    } else {
-      reportArea.innerHTML=data.html || 'No report.';
-    }
-  } catch(e){
-    hideLoading();
-    reportArea.innerText='Error: '+e;
+
+  function hideLoading() {
+    loadingMsg.style.display = 'none';
   }
-}
-// set radius
-document.getElementById('aqiRadiusForm').addEventListener('submit', async e=>{
-  e.preventDefault();
-  const val=document.getElementById('aqiRadiusSelect').value;
-  try{
-    await fetchJSON('/api/set-aqi-radius',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({radius:val})
-    });
-    alert('AQI distance updated.');
-  } catch(err){
-    alert('Error updating distance: '+err);
-  }
-});
-// set daily time
-document.getElementById('dailyTimeForm').addEventListener('submit', async e=>{
-  e.preventDefault();
-  const hour=document.getElementById('dailyHour').value;
-  const minute=document.getElementById('dailyMinute').value;
-  try{
-    await fetchJSON('/api/set-daily-time',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({hour,minute})
-    });
-    alert('Daily report time updated.');
-  } catch(err){
-    alert('Error updating daily time: '+err);
-  }
-});
 
-// countdown
-function updateCountdowns(){
-  const now=new Date();
-  const nextHour=new Date(now);
-  nextHour.setHours(now.getHours()+1,0,0,0);
-  const hourlyMs=nextHour - now;
-
-  const nextDaily=new Date(now);
-  nextDaily.setHours(8,0,0,0);
-  if(nextDaily<=now) nextDaily.setDate(nextDaily.getDate()+1);
-  const dailyMs=nextDaily - now;
-
-  document.getElementById('hourlyCountdown').innerText=formatMs(hourlyMs);
-  document.getElementById('dailyCountdown').innerText=formatMs(dailyMs);
-}
-function formatMs(ms){
-  const s=Math.floor(ms/1000);
-  const hh=Math.floor(s/3600);
-  const mm=Math.floor((s%3600)/60);
-  const ss=s%60;
-  return `${hh}h ${mm}m ${ss}s`;
-}
-setInterval(updateCountdowns,1000);
-updateCountdowns();
-
-updateBtn.addEventListener('click', updateNow);
-
-loadAddresses();
-loadReport();
-
-// fancy pop-up for debug or additional data
-function showDetailPopup(html, event){
-  const popup=document.getElementById('detailPopup');
-  popup.innerHTML=html + `<p><button onclick="hideDetailPopup()">Close</button></p>`;
-  popup.style.display='block';
-  const x=event.pageX+10;
-  const y=event.pageY+10;
-  popup.style.left=x+'px';
-  popup.style.top=y+'px';
-}
-function hideDetailPopup(){
-  const popup=document.getElementById('detailPopup');
-  popup.style.display='none';
-  popup.innerHTML='';
-}
-
-// Map Popups
-function showMapPopup(source, adrEncoded, dataEncoded) {
-  // Decode the JSON strings.
-  const adr = JSON.parse(decodeURIComponent(adrEncoded));
-  const data = JSON.parse(decodeURIComponent(dataEncoded));
-  const popup = document.getElementById('detailPopup');
-  popup.innerHTML = '<p>Loading map...</p>';
-  popup.style.display = 'block';
-  // Position the popup near the mouse event if desired (or center it)
-  // Call a function to generate the URL on the client side.
-  let mapUrl = '';
-  if (source === 'AirNow') {
-    mapUrl = generateGoogleMapsUrlForAirNow_Client(adr, data);
-  } else if (source === 'PurpleAir') {
-    mapUrl = generateGoogleMapsUrlForPurpleAir_Client(adr, data);
-  }
-  // Once the URL is ready, update the popup with an image.
-  const img = document.createElement('img');
-  img.src = mapUrl;
-  img.style.maxWidth = '100%';
-  // Replace loading message
-  popup.innerHTML = '';
-  popup.appendChild(img);
-}
-
-// Client-side versions of the map generators (similar to the server-side ones)
-// Assume window.GOOGLE_MAPS_API_KEY is set in dashboard.html.
-function getCustomMarkerUrl_Client(aqi, color) {
-  return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${aqi}|${color}|FFFFFF`;
-}
-
-function generateGoogleMapsUrlForAirNow_Client(adr, an) {
-  const key = window.GOOGLE_MAPS_API_KEY || '';
-  let markers = [];
-  markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
-  let visibleParam = `${adr.lat},${adr.lon}`;
-  if (an.data_json && an.data_json.debug && an.data_json.debug.tries && an.data_json.debug.tries.length) {
-    const lastTry = an.data_json.debug.tries[an.data_json.debug.tries.length - 1];
-    if (lastTry.boundingBox) {
-      const bb = lastTry.boundingBox;
-      visibleParam = `${bb.minLat},${bb.minLon}|${bb.maxLat},${bb.maxLon}`;
+  async function loadAddresses() {
+    try {
+      const arr = await fetchJSON('/api/list-addresses');
+      if (!arr) return;
+      if (!arr.length) {
+        addressesList.innerText = 'No addresses. Please add one above.';
+      } else {
+        let html = '<ul>';
+        for (const a of arr) {
+          html += `<li>${a.address} ${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
+            <form method="post" action="/api/delete-address" style="display:inline;">
+              <input type="hidden" name="addressId" value="${a.id}">
+              <button type="submit" style="margin-left:10px;">Delete</button>
+            </form>
+          </li>`;
+        }
+        html += '</ul>';
+        addressesList.innerHTML = html;
+      }
+    } catch (e) {
+      addressesList.innerText = 'Error: ' + e;
     }
   }
-  if (an.data_json && an.data_json.debug && an.data_json.debug.sensors && an.data_json.debug.sensors.length) {
-    an.data_json.debug.sensors.forEach(sensor => {
-      const iconUrl = getCustomMarkerUrl_Client(sensor.aqi, 'FF0000');
-      markers.push(`markers=${encodeURIComponent(`icon:${iconUrl}|${sensor.lat},${sensor.lon}`)}`);
-    });
+
+  async function loadReport() {
+    try {
+      const data = await fetchJSON('/api/myReport');
+      if (!data) return;
+      if (data.error) {
+        reportArea.innerText = 'Error: ' + data.error;
+      } else {
+        reportArea.innerHTML = data.html || 'No report.';
+      }
+    } catch (e) {
+      reportArea.innerText = 'Error: ' + e;
+    }
   }
-  const markerParams = markers.join('&');
-  return `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
-}
 
-function generateGoogleMapsUrlForPurpleAir_Client(adr, pa) {
-  const key = window.GOOGLE_MAPS_API_KEY || '';
-  let markers = [];
-  markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
-  let latitudes = [], longitudes = [];
-  if (pa.data_json && pa.data_json.debug && pa.data_json.debug.sensors && pa.data_json.debug.sensors.length) {
-    pa.data_json.debug.sensors.forEach(sensor => {
-      const iconUrl = getCustomMarkerUrl_Client(sensor.aqi, '008000'); // green marker
-      markers.push(`markers=${encodeURIComponent(`icon:${iconUrl}|${sensor.lat},${sensor.lon}`)}`);
-      latitudes.push(sensor.lat);
-      longitudes.push(sensor.lon);
-    });
+  async function updateNow() {
+    showLoading();
+    try {
+      const data = await fetchJSON('/api/report-now', { method: 'POST' });
+      hideLoading();
+      if (!data) return;
+      if (data.error) {
+        reportArea.innerText = 'Error: ' + data.error;
+      } else {
+        reportArea.innerHTML = data.html || 'No report.';
+      }
+    } catch (e) {
+      hideLoading();
+      reportArea.innerText = 'Error: ' + e;
+    }
   }
-  let visibleParam = `${adr.lat},${adr.lon}`;
-  if (latitudes.length && longitudes.length) {
-    const minLat = Math.min(...latitudes, adr.lat);
-    const maxLat = Math.max(...latitudes, adr.lat);
-    const minLon = Math.min(...longitudes, adr.lon);
-    const maxLon = Math.max(...longitudes, adr.lon);
-    visibleParam = `${minLat},${minLon}|${maxLat},${maxLon}`;
+
+  // Form event listeners
+  document.getElementById('aqiRadiusForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const val = document.getElementById('aqiRadiusSelect').value;
+    try {
+      await fetchJSON('/api/set-aqi-radius', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ radius: val })
+      });
+      alert('AQI distance updated.');
+    } catch (err) {
+      alert('Error updating distance: ' + err);
+    }
+  });
+
+  document.getElementById('dailyTimeForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const hour = document.getElementById('dailyHour').value;
+    const minute = document.getElementById('dailyMinute').value;
+    try {
+      await fetchJSON('/api/set-daily-time', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hour, minute })
+      });
+      alert('Daily report time updated.');
+    } catch (err) {
+      alert('Error updating daily time: ' + err);
+    }
+  });
+
+  function updateCountdowns() {
+    const now = new Date();
+    const nextHour = new Date(now);
+    nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+    const hourlyMs = nextHour - now;
+
+    const nextDaily = new Date(now);
+    nextDaily.setHours(8, 0, 0, 0);
+    if (nextDaily <= now) nextDaily.setDate(nextDaily.getDate() + 1);
+    const dailyMs = nextDaily - now;
+
+    document.getElementById('hourlyCountdown').innerText = formatMs(hourlyMs);
+    document.getElementById('dailyCountdown').innerText = formatMs(dailyMs);
   }
-  const markerParams = markers.join('&');
-  return `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
-}
 
-// Client Side for OpenWeather
-function getWindMarkerUrl_Client(windDeg) {
-  // Use getWindArrow_Client (which mimics getWindArrow) to get the arrow symbol.
-  const arrow = getWindArrow_Client(windDeg);
-  // Use the Chart API to create a custom marker.
-  return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${arrow}|FFA500|000000`;
-}
+  function formatMs(ms) {
+    const s = Math.floor(ms / 1000);
+    const hh = Math.floor(s / 3600);
+    const mm = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    return `${hh}h ${mm}m ${ss}s`;
+  }
 
-function getWindArrow_Client(deg) {
-  const directions = ['↑','↗','→','↘','↓','↙','←','↖'];
-  const idx = Math.round(deg / 45) % 8;
-  return directions[idx];
-}
+  setInterval(updateCountdowns, 1000);
+  updateCountdowns();
 
-function generateGoogleMapsUrlForOpenWeather_Client(adr, ow) {
-  const key = window.GOOGLE_MAPS_API_KEY || '';
-  let markers = [];
-  // User home marker remains.
-  markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
-  
-  const windSpeed = (ow.data_json && ow.data_json.windSpeed) ? ow.data_json.windSpeed : 0;
-  const windDeg = (ow.data_json && ow.data_json.windDeg) ? ow.data_json.windDeg : 0;
-  const windMarkerUrl = getWindMarkerUrl_Client(windDeg);
-  
-  // Place one wind marker (centered on user) using the custom icon.
-  markers.push(`markers=${encodeURIComponent(`icon:${windMarkerUrl}|${adr.lat},${adr.lon}`)}`);
-  
-  // Use a fixed visible area.
-  const visibleParam = `${adr.lat - 0.03},${adr.lon - 0.03}|${adr.lat + 0.03},${adr.lon + 0.03}`;
-  
-  const markerParams = markers.join('&');
-  // Set size to 600x600
-  return `https://maps.googleapis.com/maps/api/staticmap?size=600x600&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
-}
+  updateBtn.addEventListener('click', updateNow);
 
+  loadAddresses();
+  loadReport();
+
+  // Debug popup for details
+  function showDetailPopup(html, event) {
+    const popup = document.getElementById('detailPopup');
+    popup.innerHTML = html + `<p><button onclick="hideDetailPopup()">Close</button></p>`;
+    popup.style.display = 'block';
+    const x = event.pageX + 10;
+    const y = event.pageY + 10;
+    popup.style.left = x + 'px';
+    popup.style.top = y + 'px';
+  }
+
+  function hideDetailPopup() {
+    const popup = document.getElementById('detailPopup');
+    popup.style.display = 'none';
+    popup.innerHTML = '';
+  }
+
+  // Map popup for "[view on map]" links
+  function showMapPopup(source, adrEncoded, dataEncoded) {
+    const adr = JSON.parse(decodeURIComponent(adrEncoded));
+    const data = JSON.parse(decodeURIComponent(dataEncoded));
+    const popup = document.getElementById('detailPopup');
+    popup.innerHTML = '<p>Loading map...</p>';
+    popup.style.display = 'block';
+    // For simplicity, position the popup centered in the viewport
+    popup.style.left = '50%';
+    popup.style.top = '50%';
+    popup.style.transform = 'translate(-50%, -50%)';
+    let mapUrl = '';
+    if (source === 'AirNow') {
+      mapUrl = generateGoogleMapsUrlForAirNow_Client(adr, data);
+    } else if (source === 'PurpleAir') {
+      mapUrl = generateGoogleMapsUrlForPurpleAir_Client(adr, data);
+    }
+    const img = document.createElement('img');
+    img.src = mapUrl;
+    img.style.maxWidth = '100%';
+    popup.innerHTML = '';
+    popup.appendChild(img);
+  }
+
+  // Client-side map generators
+  function getCustomMarkerUrl_Client(aqi, color) {
+    return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${aqi}|${color}|FFFFFF`;
+  }
+
+  function generateGoogleMapsUrlForAirNow_Client(adr, an) {
+    const key = window.GOOGLE_MAPS_API_KEY || '';
+    let markers = [];
+    markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
+    let visibleParam = `${adr.lat},${adr.lon}`;
+    if (an.data_json && an.data_json.debug && an.data_json.debug.tries && an.data_json.debug.tries.length) {
+      const lastTry = an.data_json.debug.tries[an.data_json.debug.tries.length - 1];
+      if (lastTry.boundingBox) {
+        const bb = lastTry.boundingBox;
+        visibleParam = `${bb.minLat},${bb.minLon}|${bb.maxLat},${bb.maxLon}`;
+      }
+    }
+    if (an.data_json && an.data_json.debug && an.data_json.debug.sensors && an.data_json.debug.sensors.length) {
+      an.data_json.debug.sensors.forEach(sensor => {
+        const iconUrl = getCustomMarkerUrl_Client(sensor.aqi, 'FF0000');
+        markers.push(`markers=${encodeURIComponent(`icon:${iconUrl}|${sensor.lat},${sensor.lon}`)}`);
+      });
+    }
+    const markerParams = markers.join('&');
+    return `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
+  }
+
+  function generateGoogleMapsUrlForPurpleAir_Client(adr, pa) {
+    const key = window.GOOGLE_MAPS_API_KEY || '';
+    let markers = [];
+    markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
+    let latitudes = [], longitudes = [];
+    if (pa.data_json && pa.data_json.debug && pa.data_json.debug.sensors && pa.data_json.debug.sensors.length) {
+      pa.data_json.debug.sensors.forEach(sensor => {
+        const iconUrl = getCustomMarkerUrl_Client(sensor.aqi, '008000');
+        markers.push(`markers=${encodeURIComponent(`icon:${iconUrl}|${sensor.lat},${sensor.lon}`)}`);
+        latitudes.push(sensor.lat);
+        longitudes.push(sensor.lon);
+      });
+    }
+    let visibleParam = `${adr.lat},${adr.lon}`;
+    if (latitudes.length && longitudes.length) {
+      const minLat = Math.min(...latitudes, adr.lat);
+      const maxLat = Math.max(...latitudes, adr.lat);
+      const minLon = Math.min(...longitudes, adr.lon);
+      const maxLon = Math.max(...longitudes, adr.lon);
+      visibleParam = `${minLat},${minLon}|${maxLat},${maxLon}`;
+    }
+    const markerParams = markers.join('&');
+    return `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
+  }
+
+  function getWindArrow_Client(deg) {
+    const directions = ['↑','↗','→','↘','↓','↙','←','↖'];
+    const idx = Math.round(deg / 45) % 8;
+    return directions[idx];
+  }
+
+  function getWindMarkerUrl_Client(windDeg) {
+    const arrow = getWindArrow_Client(windDeg);
+    return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${arrow}|FFA500|000000`;
+  }
+
+  function generateGoogleMapsUrlForOpenWeather_Client(adr, ow) {
+    const key = window.GOOGLE_MAPS_API_KEY || '';
+    let markers = [];
+    markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
+    const windSpeed = (ow.data_json && ow.data_json.windSpeed) ? ow.data_json.windSpeed : 0;
+    const windDeg = (ow.data_json && ow.data_json.windDeg) ? ow.data_json.windDeg : 0;
+    const windMarkerUrl = getWindMarkerUrl_Client(windDeg);
+    markers.push(`markers=${encodeURIComponent(`icon:${windMarkerUrl}|${adr.lat},${adr.lon}`)}`);
+    const visibleParam = `${adr.lat - 0.03},${adr.lon - 0.03}|${adr.lat + 0.03},${adr.lon + 0.03}`;
+    const markerParams = markers.join('&');
+    return `https://maps.googleapis.com/maps/api/staticmap?size=600x600&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
+  }
 </script>
 <script src="/js/autocomplete.js"></script>
 </body>
