@@ -288,7 +288,7 @@ function generateGoogleMapsUrlForPurpleAir(adr, pa) {
   let latitudes = [], longitudes = [];
   if (pa.data_json && pa.data_json.debug && pa.data_json.debug.sensors && pa.data_json.debug.sensors.length) {
     pa.data_json.debug.sensors.forEach(sensor => {
-      // Use a green marker for PurpleAir sensors
+      // Use a green marker for PurpleAir sensors with a custom icon that shows the AQI.
       const iconUrl = getCustomMarkerUrl(sensor.aqi, '008000');
       markers.push(`markers=${encodeURIComponent(`icon:${iconUrl}|${sensor.lat},${sensor.lon}`)}`);
       latitudes.push(sensor.lat);
@@ -304,8 +304,7 @@ function generateGoogleMapsUrlForPurpleAir(adr, pa) {
     visibleParam = `${minLat},${minLon}|${maxLat},${maxLon}`;
   }
   const markerParams = markers.join('&');
-  const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
-  return url;
+  return `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
 }
 
 // Generate a Google Static Maps URL for OpenWeather
@@ -790,10 +789,11 @@ async function fetchAirNowAQIWithCache(lat, lon, initialMiles) {
   });
   return result;
 }
+
 async function fetchAirNowAQI(lat, lon, initialMiles) {
   let radiusMiles = initialMiles || 0.5;
   let attempts = 0;
-  let maxAttempts = 5;
+  const maxAttempts = 5;
   let foundSensors = false;
 
   // We'll store the "best" debug info if we never find sensors
@@ -872,7 +872,6 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
           debugInfo.closestDist = closestDist;
           debugInfo.closestAQI = closestVal;
           debugInfo.averageAQI = avg;
-
           finalResult.closest = closestVal;
           finalResult.average = avg;
           finalResult.debug.tries.push(debugInfo);
@@ -886,102 +885,11 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
     }
   }
 
-  // Add the debug log before returning:
+  // Log the debug information for troubleshooting
   console.log('AirNow debug info:', JSON.stringify(finalResult.debug, null, 2));
   return finalResult;
 }
 
-  while (!foundSensors && attempts < maxAttempts) {
-    attempts++;
-    // Convert miles -> degrees. Approx 69 miles per degree latitude
-    let degOffset = radiusMiles / 69;
-    let minLat = lat - degOffset;
-    let maxLat = lat + degOffset;
-    let minLon = lon - degOffset;
-    let maxLon = lon + degOffset;
-
-    // We'll record the attempt in debug
-    let debugInfo = {
-      pass: attempts,
-      radiusMiles,
-      boundingBox: { minLat, maxLat, minLon, maxLon }
-    };
-
-    // Build request
-    const hourStr = new Date().toISOString().slice(0, 13);
-    const url = 'https://www.airnowapi.org/aq/data/';
-    try {
-      const resp = await axios.get(url, {
-        params: {
-          startDate: hourStr,
-          endDate: hourStr,
-          parameters: 'pm25',
-          BBOX: `${minLon},${minLat},${maxLon},${maxLat}`,
-          dataType: 'A',
-          format: 'application/json',
-          verbose: 0,
-          API_KEY: process.env.AIRNOW_API_KEY
-        }
-      });
-
-      if (!Array.isArray(resp.data) || !resp.data.length) {
-        // no sensors => record and expand
-        debugInfo.message = 'No AirNow sensors returned';
-        finalResult.debug.tries.push(debugInfo);
-        radiusMiles *= 2;
-      } else {
-        // we have data => filter by distance
-        let sum = 0;
-        let count = 0;
-        let closestDist = Infinity;
-        let closestVal = 0;
-        let sensorDetails = [];
-
-        for (const s of resp.data) {
-          const dist = distanceMiles(lat, lon, s.Latitude, s.Longitude);
-          sensorDetails.push({ lat: s.Latitude, lon: s.Longitude, aqi: s.AQI, dist });
-        }
-        // filter if dist <= radiusMiles
-        sensorDetails = sensorDetails.filter(x => x.dist <= radiusMiles);
-        if (!sensorDetails.length) {
-          debugInfo.message = 'No sensors within radiusMiles in the returned data.';
-          finalResult.debug.tries.push(debugInfo);
-          radiusMiles *= 2;
-        } else {
-          // Found sensors => compute average
-          for (const sd of sensorDetails) {
-            sum += sd.aqi;
-            count++;
-            if (sd.dist < closestDist) {
-              closestDist = sd.dist;
-              closestVal = sd.aqi;
-            }
-          }
-          const avg = Math.round(sum / count);
-          debugInfo.sensorCount = count;
-          debugInfo.closestDist = closestDist;
-          debugInfo.closestAQI = closestVal;
-          debugInfo.averageAQI = avg;
-
-          finalResult.closest = closestVal;
-          finalResult.average = avg;
-          finalResult.debug.tries.push(debugInfo);
-
-          foundSensors = true;
-        }
-      }
-    } catch (e) {
-      debugInfo.error = e.message;
-      finalResult.debug.tries.push(debugInfo);
-      // We'll still expand the radius and try again.
-      radiusMiles *= 2;
-    }
-  }
-
-  // If we never found sensors, finalResult.closest stays 0, etc.
-  // finalResult.debug will record each attempt. 
-  return finalResult;
-}
 
 async function fetchOpenWeather(lat,lon){
   const debugInfo={lat,lon};
