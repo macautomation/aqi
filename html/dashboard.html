@@ -12,7 +12,7 @@
     #reportArea { margin:10px 0; }
     .loadingGif { width:50px; display:block; margin:10px auto; }
     .btn { padding:10px; margin-top:10px; cursor:pointer; }
-    /* pop-up for debug or map details */
+    /* Popup for debug or map details */
     #detailPopup {
       display:none;
       position:absolute;
@@ -97,16 +97,13 @@
   </p>
 </div>
 
-<!-- Detail popup for debug info and map popups -->
+<!-- Popup for debug details and map display -->
 <div id="detailPopup"></div>
 
 <script>
-  // NOTE: We no longer expose the Google Maps API key on the client.
-  // For map popups, the server-generated URLs for OpenWeather will be embedded in the HTML.
-  // For AirNow and PurpleAir popups, you can implement a server proxy endpoint to generate the URL
-  // or accept that the client-side functions use the API key.
-  // For this example, we assume you want to keep the API key on the server.
-  
+  // Note: We are not exposing the Google Maps API key on the client.
+  // Instead, a server-side proxy at /api/getMapUrl will generate map URLs.
+
   async function fetchJSON(url, opts) {
     const resp = await fetch(url, opts);
     if (!resp.ok) {
@@ -189,7 +186,7 @@
     }
   }
 
-  // Form event listeners
+  // Event listeners for forms
   document.getElementById('aqiRadiusForm').addEventListener('submit', async e => {
     e.preventDefault();
     const val = document.getElementById('aqiRadiusSelect').value;
@@ -226,16 +223,13 @@
     const nextHour = new Date(now);
     nextHour.setHours(now.getHours() + 1, 0, 0, 0);
     const hourlyMs = nextHour - now;
-
     const nextDaily = new Date(now);
     nextDaily.setHours(8, 0, 0, 0);
     if (nextDaily <= now) nextDaily.setDate(nextDaily.getDate() + 1);
     const dailyMs = nextDaily - now;
-
     document.getElementById('hourlyCountdown').innerText = formatMs(hourlyMs);
     document.getElementById('dailyCountdown').innerText = formatMs(dailyMs);
   }
-
   function formatMs(ms) {
     const s = Math.floor(ms / 1000);
     const hh = Math.floor(s / 3600);
@@ -247,7 +241,6 @@
   updateCountdowns();
 
   updateBtn.addEventListener('click', updateNow);
-
   loadAddresses();
   loadReport();
 
@@ -267,79 +260,34 @@
     popup.innerHTML = '';
   }
 
-  // Map popup for "[view on map]" links for AirNow and PurpleAir.
-  // (The server already generates the OpenWeather map inline.)
-  function showMapPopup(source, adrEncoded, dataEncoded) {
-    const adr = JSON.parse(decodeURIComponent(adrEncoded));
-    const data = JSON.parse(decodeURIComponent(dataEncoded));
+  // Map popup for "[view on map]" links.
+  // This function calls our server proxy endpoint /api/getMapUrl
+  function showMapPopupForSource(source, lat, lon, dataEncoded) {
     const popup = document.getElementById('detailPopup');
     popup.innerHTML = '<p>Loading map...</p>';
-    // Center the popup in the viewport:
     popup.style.display = 'block';
+    // Center the popup in the viewport:
     popup.style.left = '50%';
     popup.style.top = '50%';
     popup.style.transform = 'translate(-50%, -50%)';
-    let mapUrl = '';
-    if (source === 'AirNow') {
-      mapUrl = generateGoogleMapsUrlForAirNow_Client(adr, data);
-    } else if (source === 'PurpleAir') {
-      mapUrl = generateGoogleMapsUrlForPurpleAir_Client(adr, data);
-    }
-    const img = document.createElement('img');
-    img.src = mapUrl;
-    img.style.maxWidth = '100%';
-    popup.innerHTML = '';
-    popup.appendChild(img);
-  }
-
-  // Client-side map generators for popups (they will only be used for AirNow and PurpleAir)
-  function getCustomMarkerUrl_Client(aqi, color) {
-    return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${aqi}|${color}|FFFFFF`;
-  }
-  function generateGoogleMapsUrlForAirNow_Client(adr, an) {
-    const key = window.GOOGLE_MAPS_API_KEY || '';
-    let markers = [];
-    markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
-    let visibleParam = `${adr.lat},${adr.lon}`;
-    if (an.data_json && an.data_json.debug && an.data_json.debug.tries && an.data_json.debug.tries.length) {
-      const lastTry = an.data_json.debug.tries[an.data_json.debug.tries.length - 1];
-      if (lastTry.boundingBox) {
-        const bb = lastTry.boundingBox;
-        visibleParam = `${bb.minLat},${bb.minLon}|${bb.maxLat},${bb.maxLon}`;
-      }
-    }
-    if (an.data_json && an.data_json.debug && an.data_json.debug.sensors && an.data_json.debug.sensors.length) {
-      an.data_json.debug.sensors.forEach(sensor => {
-        const iconUrl = getCustomMarkerUrl_Client(sensor.aqi, 'FF0000');
-        markers.push(`markers=${encodeURIComponent(`icon:${iconUrl}|${sensor.lat},${sensor.lon}`)}`);
+    
+    fetch(`/api/getMapUrl?source=${source}&lat=${lat}&lon=${lon}&data=${dataEncoded}`)
+      .then(response => response.json())
+      .then(result => {
+        if (result.url) {
+          const img = document.createElement('img');
+          img.src = result.url;
+          img.style.maxWidth = '100%';
+          popup.innerHTML = '';
+          popup.appendChild(img);
+        } else {
+          popup.innerHTML = '<p>Error loading map.</p>';
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        popup.innerHTML = '<p>Error loading map.</p>';
       });
-    }
-    const markerParams = markers.join('&');
-    return `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
-  }
-  function generateGoogleMapsUrlForPurpleAir_Client(adr, pa) {
-    const key = window.GOOGLE_MAPS_API_KEY || '';
-    let markers = [];
-    markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
-    let latitudes = [], longitudes = [];
-    if (pa.data_json && pa.data_json.debug && pa.data_json.debug.sensors && pa.data_json.debug.sensors.length) {
-      pa.data_json.debug.sensors.forEach(sensor => {
-        const iconUrl = getCustomMarkerUrl_Client(sensor.aqi, '008000');
-        markers.push(`markers=${encodeURIComponent(`icon:${iconUrl}|${sensor.lat},${sensor.lon}`)}`);
-        latitudes.push(sensor.lat);
-        longitudes.push(sensor.lon);
-      });
-    }
-    let visibleParam = `${adr.lat},${adr.lon}`;
-    if (latitudes.length && longitudes.length) {
-      const minLat = Math.min(...latitudes, adr.lat);
-      const maxLat = Math.max(...latitudes, adr.lat);
-      const minLon = Math.min(...longitudes, adr.lon);
-      const maxLon = Math.max(...longitudes, adr.lon);
-      visibleParam = `${minLat},${minLon}|${maxLat},${maxLon}`;
-    }
-    const markerParams = markers.join('&');
-    return `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
   }
 </script>
 <script src="/js/autocomplete.js"></script>
