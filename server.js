@@ -252,10 +252,10 @@ function getWindArrow(deg) {
 function generateGoogleMapsUrlForAirNow(adr, an) {
   const key = process.env.GOOGLE_MAPS_API_KEY || '';
   let markers = [];
-  // User home marker
-  markers.push(`color:blue|label:H|${adr.lat},${adr.lon}`);
+  // User home marker (blue with label "H")
+  markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
   
-  // Determine visible area: if available, take the bounding box from the last AirNow API try.
+  // Determine visible area from the last API attempt’s bounding box if available.
   let visibleParam = `${adr.lat},${adr.lon}`;
   if (an.data_json && an.data_json.debug && an.data_json.debug.tries && an.data_json.debug.tries.length) {
     const lastTry = an.data_json.debug.tries[an.data_json.debug.tries.length - 1];
@@ -265,14 +265,15 @@ function generateGoogleMapsUrlForAirNow(adr, an) {
     }
   }
   
-  // Add sensor markers if available (each sensor’s marker shows its AQI)
+  // Add sensor markers using custom icons so the marker displays the AQI number.
   if (an.data_json && an.data_json.debug && an.data_json.debug.sensors && an.data_json.debug.sensors.length) {
     an.data_json.debug.sensors.forEach(sensor => {
-      markers.push(`color:red|label:${sensor.aqi}|${sensor.lat},${sensor.lon}`);
+      const iconUrl = getCustomMarkerUrl(sensor.aqi, 'FF0000'); // red marker
+      markers.push(`markers=${encodeURIComponent(`icon:${iconUrl}|${sensor.lat},${sensor.lon}`)}`);
     });
   }
   
-  const markerParams = markers.map(m => `markers=${encodeURIComponent(m)}`).join('&');
+  const markerParams = markers.join('&');
   const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
   return url;
 }
@@ -281,16 +282,19 @@ function generateGoogleMapsUrlForAirNow(adr, an) {
 function generateGoogleMapsUrlForPurpleAir(adr, pa) {
   const key = process.env.GOOGLE_MAPS_API_KEY || '';
   let markers = [];
-  markers.push(`color:blue|label:H|${adr.lat},${adr.lon}`);
+  // User home marker (blue with label "H")
+  markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
+  
   let latitudes = [], longitudes = [];
   if (pa.data_json && pa.data_json.debug && pa.data_json.debug.sensors && pa.data_json.debug.sensors.length) {
     pa.data_json.debug.sensors.forEach(sensor => {
-      markers.push(`color:green|label:${sensor.aqi}|${sensor.lat},${sensor.lon}`);
+      // Use a green marker for PurpleAir sensors
+      const iconUrl = getCustomMarkerUrl(sensor.aqi, '008000');
+      markers.push(`markers=${encodeURIComponent(`icon:${iconUrl}|${sensor.lat},${sensor.lon}`)}`);
       latitudes.push(sensor.lat);
       longitudes.push(sensor.lon);
     });
   }
-  // Compute bounding box from sensor coordinates (or include user location)
   let visibleParam = `${adr.lat},${adr.lon}`;
   if (latitudes.length && longitudes.length) {
     const minLat = Math.min(...latitudes, adr.lat);
@@ -299,7 +303,7 @@ function generateGoogleMapsUrlForPurpleAir(adr, pa) {
     const maxLon = Math.max(...longitudes, adr.lon);
     visibleParam = `${minLat},${minLon}|${maxLat},${maxLon}`;
   }
-  const markerParams = markers.map(m => `markers=${encodeURIComponent(m)}`).join('&');
+  const markerParams = markers.join('&');
   const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
   return url;
 }
@@ -332,6 +336,11 @@ function generateGoogleMapsUrlForOpenWeather(adr, ow) {
   const markerParams = markers.map(m => `markers=${encodeURIComponent(m)}`).join('&');
   const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
   return url;
+}
+
+function getCustomMarkerUrl(aqi, color) {
+  // Uses Google Chart API to generate a marker icon with the AQI as text.
+  return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${aqi}|${color}|FFFFFF`;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -782,7 +791,6 @@ async function fetchAirNowAQIWithCache(lat, lon, initialMiles) {
   return result;
 }
 async function fetchAirNowAQI(lat, lon, initialMiles) {
-  // Start small (e.g., 0.5 miles)
   let radiusMiles = initialMiles || 0.5;
   let attempts = 0;
   let maxAttempts = 5;
@@ -799,6 +807,89 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
       tries: []
     }
   };
+
+  while (!foundSensors && attempts < maxAttempts) {
+    attempts++;
+    let degOffset = radiusMiles / 69;
+    let minLat = lat - degOffset;
+    let maxLat = lat + degOffset;
+    let minLon = lon - degOffset;
+    let maxLon = lon + degOffset;
+
+    let debugInfo = {
+      pass: attempts,
+      radiusMiles,
+      boundingBox: { minLat, maxLat, minLon, maxLon }
+    };
+
+    const hourStr = new Date().toISOString().slice(0, 13);
+    const url = 'https://www.airnowapi.org/aq/data/';
+    try {
+      const resp = await axios.get(url, {
+        params: {
+          startDate: hourStr,
+          endDate: hourStr,
+          parameters: 'pm25',
+          BBOX: `${minLon},${minLat},${maxLon},${maxLat}`,
+          dataType: 'A',
+          format: 'application/json',
+          verbose: 0,
+          API_KEY: process.env.AIRNOW_API_KEY
+        }
+      });
+
+      if (!Array.isArray(resp.data) || !resp.data.length) {
+        debugInfo.message = 'No AirNow sensors returned';
+        finalResult.debug.tries.push(debugInfo);
+        radiusMiles *= 2;
+      } else {
+        let sum = 0;
+        let count = 0;
+        let closestDist = Infinity;
+        let closestVal = 0;
+        let sensorDetails = [];
+
+        for (const s of resp.data) {
+          const dist = distanceMiles(lat, lon, s.Latitude, s.Longitude);
+          sensorDetails.push({ lat: s.Latitude, lon: s.Longitude, aqi: s.AQI, dist });
+        }
+        sensorDetails = sensorDetails.filter(x => x.dist <= radiusMiles);
+        if (!sensorDetails.length) {
+          debugInfo.message = 'No sensors within radiusMiles in the returned data.';
+          finalResult.debug.tries.push(debugInfo);
+          radiusMiles *= 2;
+        } else {
+          for (const sd of sensorDetails) {
+            sum += sd.aqi;
+            count++;
+            if (sd.dist < closestDist) {
+              closestDist = sd.dist;
+              closestVal = sd.aqi;
+            }
+          }
+          const avg = Math.round(sum / count);
+          debugInfo.sensorCount = count;
+          debugInfo.closestDist = closestDist;
+          debugInfo.closestAQI = closestVal;
+          debugInfo.averageAQI = avg;
+
+          finalResult.closest = closestVal;
+          finalResult.average = avg;
+          finalResult.debug.tries.push(debugInfo);
+          foundSensors = true;
+        }
+      }
+    } catch (e) {
+      debugInfo.error = e.message;
+      finalResult.debug.tries.push(debugInfo);
+      radiusMiles *= 2;
+    }
+  }
+
+  // Add the debug log before returning:
+  console.log('AirNow debug info:', JSON.stringify(finalResult.debug, null, 2));
+  return finalResult;
+}
 
   while (!foundSensors && attempts < maxAttempts) {
     attempts++;
@@ -1393,7 +1484,6 @@ async function buildAirNowSection(adr, an) {
   const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
   const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
 
-  // Show the nearest sensor distance if available.
   let nearestLine = '';
   if (an.data_json?.debug?.nearestDistance !== undefined) {
     nearestLine = `<br>Nearest sensor is ${an.data_json.debug.nearestDistance.toFixed(1)} miles away`;
@@ -1403,42 +1493,42 @@ async function buildAirNowSection(adr, an) {
   const debugHTML = buildDebugPopupHTML(debugObj, 'AirNow Debug');
 
   return `
-    <div style="display:flex; align-items:center;">
-      <table style="border-collapse:collapse;width:50%;margin-bottom:10px;">
-        <thead>
-          <tr style="background:#f0f0f0;"><th colspan="2">AirNow</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Current Closest AQI</td>
-            <td style="${cStyle}">
-              ${c} (${cat})
-              <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
-                 onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
-                 [details]
-              </a>
-            </td>
-          </tr>
-          <tr>
-            <td>Current Radius Average</td>
-            <td style="${rStyle}">${r}</td>
-          </tr>
-          <tr>
-            <td>Closest 24hr Average</td>
-            <td style="${c24Style}">${c24}</td>
-          </tr>
-          <tr>
-            <td>Radius 24hr Average</td>
-            <td style="${r24Style}">${r24}</td>
-          </tr>
-          <tr>
-            <td>Nearest Sensor Distance</td>
-            <td>${nearestLine}</td>
-          </tr>
-        </tbody>
-      </table>
-      <img src="${generateGoogleMapsUrlForAirNow(adr, an)}" alt="AirNow Map" style="width: 50%;">
-    </div>
+    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
+      <thead>
+        <tr style="background:#f0f0f0;"><th colspan="2">AirNow</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Current Closest AQI</td>
+          <td style="${cStyle}">
+            ${c} (${cat})
+            <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
+               onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
+               [details]
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td>Current Radius Average</td>
+          <td style="${rStyle}">${r}</td>
+        </tr>
+        <tr>
+          <td>Closest 24hr Average</td>
+          <td style="${c24Style}">${c24}</td>
+        </tr>
+        <tr>
+          <td>Radius 24hr Average</td>
+          <td style="${r24Style}">${r24}</td>
+        </tr>
+        <tr>
+          <td>Nearest Sensor Distance</td>
+          <td>${nearestLine}</td>
+        </tr>
+        <tr>
+          <td colspan="2"><a href="#" onclick="showMapPopup('AirNow', ${encodeURIComponent(JSON.stringify(adr))}, ${encodeURIComponent(JSON.stringify(an))}); return false;">[view on map]</a></td>
+        </tr>
+      </tbody>
+    </table>
   `;
 }
 
@@ -1446,14 +1536,14 @@ async function buildAirNowSection(adr, an) {
 
 async function buildPurpleAirSection(adr, pa) {
   if (!pa) return `<p>PurpleAir => No data</p>`;
-
+  
   const c = pa.aqi_closest || 0;
   const r = pa.aqi_average || 0;
   const cat = colorCodeAQI(c);
   const cStyle = getAQIColorStyle(c);
   const rStyle = getAQIColorStyle(r);
-
-  let c24 = pa.closest_24hr_avg; 
+  
+  let c24 = pa.closest_24hr_avg;
   let r24 = pa.radius_24hr_avg;
   if (c24 == null) {
     const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
@@ -1465,52 +1555,56 @@ async function buildPurpleAirSection(adr, pa) {
   }
   const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
   const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
-
+  
   let nearestLine = '';
   if (pa.data_json?.debug?.nearestDistance !== undefined) {
     nearestLine = `<br>Nearest sensor is ${pa.data_json.debug.nearestDistance.toFixed(1)} miles away`;
   }
-
+  
   const debugObj = pa.data_json?.debug || {};
   const debugHTML = buildDebugPopupHTML(debugObj, 'PurpleAir Debug');
-
+  
   return `
-    <div style="display:flex; align-items:center;">
-      <table style="border-collapse:collapse;width:50%;margin-bottom:10px;">
-        <thead>
-          <tr style="background:#f0f0f0;"><th colspan="2">PurpleAir</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Current Closest AQI</td>
-            <td style="${cStyle}">
-              ${c} (${cat})
-              <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
-                 onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
-                 [details]
-              </a>
-            </td>
-          </tr>
-          <tr>
-            <td>Current Radius Average</td>
-            <td style="${rStyle}">${r}</td>
-          </tr>
-          <tr>
-            <td>Closest 24hr Average</td>
-            <td style="${c24Style}">${c24}</td>
-          </tr>
-          <tr>
-            <td>Radius 24hr Average</td>
-            <td style="${r24Style}">${r24}</td>
-          </tr>
-          <tr>
-            <td>Nearest Sensor Distance</td>
-            <td>${nearestLine}</td>
-          </tr>
-        </tbody>
-      </table>
-      <img src="${generateGoogleMapsUrlForPurpleAir(adr, pa)}" alt="PurpleAir Map" style="width: 50%;">
-    </div>
+    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
+      <thead>
+        <tr style="background:#f0f0f0;"><th colspan="2">PurpleAir</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Current Closest AQI</td>
+          <td style="${cStyle}">
+            ${c} (${cat})
+            <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
+               onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
+               [details]
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td>Current Radius Average</td>
+          <td style="${rStyle}">${r}</td>
+        </tr>
+        <tr>
+          <td>Closest 24hr Average</td>
+          <td style="${c24Style}">${c24}</td>
+        </tr>
+        <tr>
+          <td>Radius 24hr Average</td>
+          <td style="${r24Style}">${r24}</td>
+        </tr>
+        <tr>
+          <td>Nearest Sensor Distance</td>
+          <td>${nearestLine}</td>
+        </tr>
+        <tr>
+          <td colspan="2">
+            <a href="#" onclick="showMapPopup('PurpleAir', ${encodeURIComponent(JSON.stringify(adr))}, ${encodeURIComponent(JSON.stringify(pa))}); return false;">
+              [view on map]
+            </a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
   `;
 }
 
@@ -1531,29 +1625,30 @@ async function buildOpenWeatherSection(adr, ow) {
   const debugObj = d.debug || {};
   const debugHTML = buildDebugPopupHTML(debugObj, 'OpenWeather Debug');
   
-  return `
-    <div style="display:flex; align-items:center;">
-      <table style="border-collapse:collapse;width:50%;margin-bottom:10px;">
-        <thead>
-          <tr style="background:#f0f0f0;"><th colspan="2">OpenWeather</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Current Hourly</td>
-            <td>
-              Temp=${d.tempF || 0}F, Wind=${d.windSpeed || 0} mph from ${d.windDir || '??'} (${d.windDeg || 0}°)
-              <a href="#" data-debug="${encodeURIComponent(debugHTML)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
-            </td>
-          </tr>
-          <tr>
-            <td>24hr Average</td>
-            <td>Temp=${c24}F (assuming we store that if desired)</td>
-          </tr>
-        </tbody>
-      </table>
-      <img src="${generateGoogleMapsUrlForOpenWeather(adr, ow)}" alt="OpenWeather Map" style="width: 50%;">
-    </div>
+  // Build the table with OpenWeather data.
+  const tableHtml = `
+    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
+      <thead>
+        <tr style="background:#f0f0f0;"><th colspan="2">OpenWeather</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Current Hourly</td>
+          <td>
+            Temp=${d.tempF || 0}F, Wind=${d.windSpeed || 0} mph from ${d.windDir || '??'} (${d.windDeg || 0}°)
+            <a href="#" data-debug="${encodeURIComponent(debugHTML)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
+          </td>
+        </tr>
+        <tr>
+          <td>24hr Average</td>
+          <td>Temp=${c24}F</td>
+        </tr>
+      </tbody>
+    </table>
   `;
+  // Instead of inline map, we now include the OpenWeather map below the table.
+  const mapHtml = `<div style="margin-top:10px;"><img src="${generateGoogleMapsUrlForOpenWeather_Client(adr, ow)}" alt="OpenWeather Map" style="max-width:100%;"></div>`;
+  return tableHtml + mapHtml;
 }
 
 function buildDebugPopupHTML(debugObj, title) {
