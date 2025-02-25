@@ -1442,35 +1442,6 @@ async function buildAirNowSection(adr, an) {
   `;
 }
 
-// Helper function to generate a Google Static Maps URL for AirNow
-function generateGoogleMapsUrlForAirNow(adr, an) {
-  const key = process.env.GOOGLE_MAPS_API_KEY || '';
-  let markers = [];
-  // User home marker (blue with label "H")
-  markers.push(`color:blue|label:H|${adr.lat},${adr.lon}`);
-
-  // Determine visible area based on the bounding box used in the last API attempt, if available.
-  let visibleParam = `${adr.lat},${adr.lon}`;
-  if (an.data_json && an.data_json.debug && an.data_json.debug.tries && an.data_json.debug.tries.length) {
-    const lastTry = an.data_json.debug.tries[an.data_json.debug.tries.length - 1];
-    if (lastTry.boundingBox) {
-      const bb = lastTry.boundingBox;
-      visibleParam = `${bb.minLat},${bb.minLon}|${bb.maxLat},${bb.maxLon}`;
-    }
-  }
-  
-  // Add sensor markers if available (each marker shows its AQI value)
-  if (an.data_json && an.data_json.debug && an.data_json.debug.sensors && an.data_json.debug.sensors.length) {
-    an.data_json.debug.sensors.forEach(sensor => {
-      markers.push(`color:red|label:${sensor.aqi}|${sensor.lat},${sensor.lon}`);
-    });
-  }
-  
-  const markerParams = markers.map(m => `markers=${encodeURIComponent(m)}`).join('&');
-  const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
-  return url;
-}
-
 // PurpleAir Section
 
 async function buildPurpleAirSection(adr, pa) {
