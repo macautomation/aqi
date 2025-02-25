@@ -461,132 +461,201 @@ async function fetchPurpleAirForAddressWithCache(addressRow) {
   return result;
 }
 
+// REPLACE your entire fetchPurpleAirForAddress function with this dynamic approach
 async function fetchPurpleAirForAddress(addressRow) {
   if (!addressRow.purpleair_sensor_ids) {
     return { closest: 0, average: 0, debug: { fallback: 'No sensor IDs' } };
   }
+
   const showOnly = addressRow.purpleair_sensor_ids;
   if (!showOnly) {
     return { closest: 0, average: 0, debug: { fallback: 'No sensor IDs string' } };
   }
 
-  // 1) Use pm2.5_cf_1 and pm1.0_cf_1 in the fields parameter
-  const fields = 'sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0_cf_1,pm2.5_cf_1,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
+  // We'll request these columns. PurpleAir might shuffle or add others, so let's map them by name below.
+  const requestedFields = [
+    "sensor_index",
+    "last_seen",
+    "latitude",
+    "longitude",
+    "uptime",
+    "confidence",
+    "voc",
+    "pm1.0_cf_1",
+    "pm2.5_cf_1",
+    "pm2.5_60minute",
+    "pm2.5_alt",
+    "pm10.0",
+    "position_rating",
+    "ozone1"
+  ];
 
-  const resp = await axios.get('https://api.purpleair.com/v1/sensors', {
-    headers: { 'X-API-Key': process.env.PURPLEAIR_API_KEY },
+  const resp = await axios.get("https://api.purpleair.com/v1/sensors", {
+    headers: { "X-API-Key": process.env.PURPLEAIR_API_KEY },
     params: {
       location_type: 0,
       show_only: showOnly,
-      fields
+      fields: requestedFields.join(",")
     }
   });
-  const data = resp.data?.data || [];
+
+  // Confirm the actual fields array from the response:
+  const actualFields = resp.data.fields || [];
+  const data = resp.data.data || [];
+
   if (!data.length) {
-    return { closest: 0, average: 0, debug: { showOnly, message: 'No sensors from show_only' } };
+    return {
+      closest: 0,
+      average: 0,
+      debug: {
+        showOnly,
+        message: "No sensors from show_only",
+        fieldsReturned: actualFields
+      }
+    };
   }
 
-  // 2) Build sensor objects. Notice pm1.0_cf_1 => pm1_0, pm2.5_cf_1 => pm2_5
-  let sensorDetails = data.map(arr => ({
-    sensorIndex: arr[0],
-    lastSeen: arr[1],
-    lat: arr[2],
-    lon: arr[3],
-    uptime: arr[4],
-    confidence: arr[5],
-    voc: arr[6],
-    pm1_0: arr[7],          // from "pm1.0_cf_1"
-    pm2_5: arr[8],          // from "pm2.5_cf_1"
-    pm2_5_60m: arr[9],
-    pm2_5_alt: arr[10],
-    pm10_0: arr[11],
-    position_rating: arr[12],
-    ozone1: arr[13]
-  }));
+  // We'll create a lookup:  field -> index
+  // so we can safely read arr[indexOf["latitude"]] for lat, etc.
+  const indexOf = {};
+  for (let i = 0; i < actualFields.length; i++) {
+    indexOf[actualFields[i]] = i;
+  }
 
-  let closestDist = Infinity, sum = 0, count = 0, closestVal = 0;
-  const debugSensors = [];
+  // We'll parse the array lines using the dynamic indexes
+  // If a field name doesn't exist, we do indexOf[field] == null => skip
+  let sensorDetails = data.map((arr) => {
+    const nowSec = Math.floor(Date.now() / 1000);
 
-  const nowSec = Math.floor(Date.now() / 1000);
+    const sensor = {
+      sensorIndex: 0,
+      lastSeen: 0,
+      lat: 0,
+      lon: 0,
+      pm2_5: null,
+      pm2_5_60m: null,
+      pm2_5_alt: null,
+      pm10_0: null,
+      pm1_0: null,
+      ozone1: null,
+      voc: null,
+      confidence: null,
+      distMiles: 0,
+      aqi: 0
+    };
 
-  sensorDetails.forEach(s => {
-    // Only consider sensors last updated within 1 hour
-    const ageSec = nowSec - s.lastSeen;
+    // For each field, check if indexOf has it:
+    if (indexOf["sensor_index"] != null) sensor.sensorIndex = arr[indexOf["sensor_index"]];
+    if (indexOf["last_seen"] != null) sensor.lastSeen = arr[indexOf["last_seen"]];
+    if (indexOf["latitude"] != null) sensor.lat = arr[indexOf["latitude"]];
+    if (indexOf["longitude"] != null) sensor.lon = arr[indexOf["longitude"]];
+    if (indexOf["confidence"] != null) sensor.confidence = arr[indexOf["confidence"]];
+    if (indexOf["voc"] != null) sensor.voc = arr[indexOf["voc"]];
+    if (indexOf["pm1.0_cf_1"] != null) sensor.pm1_0 = arr[indexOf["pm1.0_cf_1"]];
+    if (indexOf["pm2.5_cf_1"] != null) sensor.pm2_5 = arr[indexOf["pm2.5_cf_1"]];
+    if (indexOf["pm2.5_60minute"] != null) sensor.pm2_5_60m = arr[indexOf["pm2.5_60minute"]];
+    if (indexOf["pm2.5_alt"] != null) sensor.pm2_5_alt = arr[indexOf["pm2.5_alt"]];
+    if (indexOf["pm10.0"] != null) sensor.pm10_0 = arr[indexOf["pm10.0"]];
+    if (indexOf["ozone1"] != null) sensor.ozone1 = arr[indexOf["ozone1"]];
+
+    // Filter out sensors older than 1 hour
+    const ageSec = nowSec - sensor.lastSeen;
     if (ageSec > 3600) {
-      return; // skip older sensor
+      // We'll mark a property "ignore: true" so we can filter it out below
+      sensor.ignore = true;
     }
 
-    // Compute distance in miles
-    s.distMiles = distanceMiles(addressRow.lat, addressRow.lon, s.lat, s.lon);
-
-    // 3) Fallback logic if pm2_5_cf_1 is null => use pm2_5_60m => pm2_5_alt => 0
-    let rawPM25 = s.pm2_5;
-    if (rawPM25 == null) {
-      if (s.pm2_5_60m != null) {
-        rawPM25 = s.pm2_5_60m;
-      } else if (s.pm2_5_alt != null) {
-        rawPM25 = s.pm2_5_alt;
-      } else {
-        rawPM25 = 0;
-      }
-    }
-
-    // Compute AQI using pm25toAQI
-    s.aqi = pm25toAQI(rawPM25);
-
-    // Add to total for average
-    sum += s.aqi;
-    count++;
-
-    // Track the physically closest sensor's AQI
-    if (s.distMiles < closestDist) {
-      closestDist = s.distMiles;
-      closestVal = s.aqi;
-    }
-
-    // 4) Update debug to show lat/lon, the final AQI, and clarify distance is in miles
-    debugSensors.push({
-      sensorIndex: s.sensorIndex,
-      lat: s.lat,
-      lon: s.lon,
-      distMiles: s.distMiles,      // explicitly in miles
-      pm2_5_cf_1: s.pm2_5,        // originally "pm2.5_cf_1"
-      pm2_5_60m: s.pm2_5_60m,
-      pm2_5_alt: s.pm2_5_alt,
-      pm10_0: s.pm10_0,
-      ozone1: s.ozone1,
-      aqi: s.aqi,
-      lastSeen: s.lastSeen,
-      voc: s.voc,
-      confidence: s.confidence
-    });
+    // We'll do distanceMiles after
+    return sensor;
   });
 
-  if (count === 0) {
-    // If all sensors were older than 1 hour, or none left after filtering
+  // Filter out sensors older than 1 hour
+  sensorDetails = sensorDetails.filter((s) => !s.ignore);
+
+  // If none left after older check:
+  if (!sensorDetails.length) {
     return {
       closest: 0,
       average: 0,
       debug: {
         showOnly,
         sensorCount: 0,
-        message: 'All sensors older than 1h or filtered out'
+        fieldsReturned: actualFields,
+        message: "All sensors older than 1 hour or no valid sensors."
+      }
+    };
+  }
+
+  // Compute distances, fallback logic for pm2.5 => pm2_5_60m => pm2_5_alt => 0
+  sensorDetails.forEach((s) => {
+    s.distMiles = distanceMiles(addressRow.lat, addressRow.lon, s.lat, s.lon);
+
+    let rawPM25 = s.pm2_5;
+    if (rawPM25 == null) {
+      if (s.pm2_5_60m != null) rawPM25 = s.pm2_5_60m;
+      else if (s.pm2_5_alt != null) rawPM25 = s.pm2_5_alt;
+      else rawPM25 = 0;
+    }
+    s.aqi = pm25toAQI(rawPM25);
+  });
+
+  // Sum up for average, find the physically closest
+  let sum = 0;
+  let count = 0;
+  let closestDist = Infinity;
+  let closestVal = 0;
+
+  sensorDetails.forEach((s) => {
+    sum += s.aqi;
+    count++;
+    if (s.distMiles < closestDist) {
+      closestDist = s.distMiles;
+      closestVal = s.aqi;
+    }
+  });
+
+  if (count === 0) {
+    return {
+      closest: 0,
+      average: 0,
+      debug: {
+        showOnly,
+        sensorCount: 0,
+        fieldsReturned: actualFields,
+        message: "No valid sensors after distance or PM2.5 logic?"
       }
     };
   }
 
   const avg = Math.round(sum / count);
 
+  // Return final debug, listing the sensor objects
   return {
     closest: closestVal,
     average: avg,
     debug: {
-      approach: 'show_only',
+      approach: "show_only (dynamic index mapping)",
       lat: addressRow.lat,
       lon: addressRow.lon,
       sensorCount: count,
       nearestDistance: closestDist,
-      sensors: debugSensors
+      fieldsReturned: actualFields,
+      sensors: sensorDetails.map((s) => ({
+        sensorIndex: s.sensorIndex,
+        lat: s.lat,
+        lon: s.lon,
+        distMiles: s.distMiles, // in miles
+        pm2_5_cf_1: s.pm2_5,
+        pm2_5_60m: s.pm2_5_60m,
+        pm2_5_alt: s.pm2_5_alt,
+        pm1_0_cf_1: s.pm1_0,
+        pm10_0: s.pm10_0,
+        ozone1: s.ozone1,
+        voc: s.voc,
+        confidence: s.confidence,
+        aqi: s.aqi,
+        lastSeen: s.lastSeen
+      }))
     }
   };
 }
