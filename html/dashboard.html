@@ -12,7 +12,7 @@
     #reportArea { margin:10px 0; }
     .loadingGif { width:50px; display:block; margin:10px auto; }
     .btn { padding:10px; margin-top:10px; cursor:pointer; }
-    /* pop-up debug or additional data */
+    /* pop-up for debug or map details */
     #detailPopup {
       display:none;
       position:absolute;
@@ -101,9 +101,12 @@
 <div id="detailPopup"></div>
 
 <script>
-  // Set your client-side Google Maps API key:
-  window.GOOGLE_MAPS_API_KEY = 'YOUR_GOOGLE_MAPS_API_KEY_HERE';
-
+  // NOTE: We no longer expose the Google Maps API key on the client.
+  // For map popups, the server-generated URLs for OpenWeather will be embedded in the HTML.
+  // For AirNow and PurpleAir popups, you can implement a server proxy endpoint to generate the URL
+  // or accept that the client-side functions use the API key.
+  // For this example, we assume you want to keep the API key on the server.
+  
   async function fetchJSON(url, opts) {
     const resp = await fetch(url, opts);
     if (!resp.ok) {
@@ -127,7 +130,6 @@
     loadingMsg.style.display = 'block';
     reportArea.innerHTML = '';
   }
-
   function hideLoading() {
     loadingMsg.style.display = 'none';
   }
@@ -241,7 +243,6 @@
     const ss = s % 60;
     return `${hh}h ${mm}m ${ss}s`;
   }
-
   setInterval(updateCountdowns, 1000);
   updateCountdowns();
 
@@ -260,21 +261,21 @@
     popup.style.left = x + 'px';
     popup.style.top = y + 'px';
   }
-
   function hideDetailPopup() {
     const popup = document.getElementById('detailPopup');
     popup.style.display = 'none';
     popup.innerHTML = '';
   }
 
-  // Map popup for "[view on map]" links
+  // Map popup for "[view on map]" links for AirNow and PurpleAir.
+  // (The server already generates the OpenWeather map inline.)
   function showMapPopup(source, adrEncoded, dataEncoded) {
     const adr = JSON.parse(decodeURIComponent(adrEncoded));
     const data = JSON.parse(decodeURIComponent(dataEncoded));
     const popup = document.getElementById('detailPopup');
     popup.innerHTML = '<p>Loading map...</p>';
+    // Center the popup in the viewport:
     popup.style.display = 'block';
-    // For simplicity, position the popup centered in the viewport
     popup.style.left = '50%';
     popup.style.top = '50%';
     popup.style.transform = 'translate(-50%, -50%)';
@@ -291,11 +292,10 @@
     popup.appendChild(img);
   }
 
-  // Client-side map generators
+  // Client-side map generators for popups (they will only be used for AirNow and PurpleAir)
   function getCustomMarkerUrl_Client(aqi, color) {
     return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${aqi}|${color}|FFFFFF`;
   }
-
   function generateGoogleMapsUrlForAirNow_Client(adr, an) {
     const key = window.GOOGLE_MAPS_API_KEY || '';
     let markers = [];
@@ -317,7 +317,6 @@
     const markerParams = markers.join('&');
     return `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
   }
-
   function generateGoogleMapsUrlForPurpleAir_Client(adr, pa) {
     const key = window.GOOGLE_MAPS_API_KEY || '';
     let markers = [];
@@ -341,30 +340,6 @@
     }
     const markerParams = markers.join('&');
     return `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
-  }
-
-  function getWindArrow_Client(deg) {
-    const directions = ['↑','↗','→','↘','↓','↙','←','↖'];
-    const idx = Math.round(deg / 45) % 8;
-    return directions[idx];
-  }
-
-  function getWindMarkerUrl_Client(windDeg) {
-    const arrow = getWindArrow_Client(windDeg);
-    return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${arrow}|FFA500|000000`;
-  }
-
-  function generateGoogleMapsUrlForOpenWeather_Client(adr, ow) {
-    const key = window.GOOGLE_MAPS_API_KEY || '';
-    let markers = [];
-    markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
-    const windSpeed = (ow.data_json && ow.data_json.windSpeed) ? ow.data_json.windSpeed : 0;
-    const windDeg = (ow.data_json && ow.data_json.windDeg) ? ow.data_json.windDeg : 0;
-    const windMarkerUrl = getWindMarkerUrl_Client(windDeg);
-    markers.push(`markers=${encodeURIComponent(`icon:${windMarkerUrl}|${adr.lat},${adr.lon}`)}`);
-    const visibleParam = `${adr.lat - 0.03},${adr.lon - 0.03}|${adr.lat + 0.03},${adr.lon + 0.03}`;
-    const markerParams = markers.join('&');
-    return `https://maps.googleapis.com/maps/api/staticmap?size=600x600&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
   }
 </script>
 <script src="/js/autocomplete.js"></script>
