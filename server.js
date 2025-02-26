@@ -205,19 +205,19 @@ function pm25toAQI(pm){
   return 0;
 }
 
-function formatDayTimeForUser(d){
-  if(!d)return 'No date';
-  const now=new Date();
-  const nowDay=new Date(now.getFullYear(),now.getMonth(),now.getDate());
-  const dateDay=new Date(d.getFullYear(),d.getMonth(),d.getDate());
-  const dayDiff=(dateDay-nowDay)/(1000*3600*24);
-  let dayStr;
-  if(dayDiff<1) dayStr='Today';
-  else if(dayDiff<2) dayStr='Tomorrow';
-  else {
-    return `${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')} at ${formatHourMin(d)}`;
+function formatDayTimeForUser(d) {
+  if (!d) return 'No date';
+  const now = new Date();
+  const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dateDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dayDiff = (dateDay - nowDay) / (1000 * 3600 * 24);
+  if (dayDiff < 1) {
+    return `Today ${formatHourMin(d)}`;
+  } else if (dayDiff < 2) {
+    return `Tomorrow ${formatHourMin(d)}`;
+  } else {
+    return `${(d.getMonth()+1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')} at ${formatHourMin(d)}`;
   }
-  return `${dayStr} at ${formatHourMin(d)}`;
 }
 
 function formatHourMin(d){
@@ -304,29 +304,28 @@ function generateGoogleMapsUrlForPurpleAir(adr, pa) {
 function generateGoogleMapsUrlForOpenWeather(adr, ow) {
   const key = process.env.GOOGLE_MAPS_API_KEY || '';
   let markers = [];
-  // User home marker (using default style)
+  // User home marker
   markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
   
   // Use wind data from ow.data_json
   const windSpeed = (ow.data_json && ow.data_json.windSpeed) ? ow.data_json.windSpeed : 0;
   const windDeg = (ow.data_json && ow.data_json.windDeg) ? ow.data_json.windDeg : 0;
   const windIconUrl = getWindMarkerUrl(windDeg, windSpeed);
-  // Place one wind marker (centered on the user) using the custom icon.
-  markers.push(`markers=${encodeURIComponent(`icon:${windIconUrl}|${adr.lat},${adr.lon}`)}`);
-  
-  // Optionally, you could add additional wind markers if desired.
+  const offset = 0.005; // approx 0.3 miles
+  markers.push(`markers=${encodeURIComponent(`icon:${windIconUrl}|${adr.lat + offset},${adr.lon}`)}`);
+  markers.push(`markers=${encodeURIComponent(`icon:${windIconUrl}|${adr.lat},${adr.lon + offset}`)}`);
+  markers.push(`markers=${encodeURIComponent(`icon:${windIconUrl}|${adr.lat - offset},${adr.lon}`)}`);
   
   // Temperature marker: show temperature in bottom right corner.
   const tempF = (ow.data_json && ow.data_json.tempF) ? ow.data_json.tempF : 0;
   markers.push(`markers=${encodeURIComponent(`color:purple|label:T:${tempF}|${adr.lat - 0.01},${adr.lon + 0.01}`)}`);
   
-  // For OpenWeather, use a fixed visible area around the user.
+  // Fixed visible area around user.
   const visibleParam = `${adr.lat - 0.03},${adr.lon - 0.03}|${adr.lat + 0.03},${adr.lon + 0.03}`;
   
   const markerParams = markers.join('&');
-  // Increase the map size to 600x600 as requested.
-  const url = `https://maps.googleapis.com/maps/api/staticmap?size=600x600&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
-  return url;
+  // Increase map size to 600x600.
+  return `https://maps.googleapis.com/maps/api/staticmap?size=600x600&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
 }
 
 function getCustomMarkerUrl(aqi, color) {
@@ -335,9 +334,7 @@ function getCustomMarkerUrl(aqi, color) {
 }
 
 function getWindMarkerUrl(windDeg, windSpeed) {
-  // Use getWindArrow to get an arrow symbol
   const arrow = getWindArrow(windDeg);
-  // Use the Google Chart API to generate a custom marker with the arrow and wind speed
   return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${arrow}${windSpeed}|FFA500|000000`;
 }
 
@@ -795,7 +792,6 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
   const maxAttempts = 5;
   let foundSensors = false;
 
-  // We'll store the "best" debug info if we never find sensors
   let finalResult = {
     closest: 0,
     average: 0,
@@ -803,7 +799,6 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
       approach: 'autoExpand',
       lat,
       lon,
-      nearestDistance,
       tries: []
     }
   };
@@ -876,6 +871,7 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
           finalResult.average = avg;
           finalResult.debug.tries.push(debugInfo);
           foundSensors = true;
+          finalResult.debug.nearestDistance = closestDist;
         }
       }
     } catch (e) {
@@ -885,7 +881,6 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
     }
   }
 
-  // Log the debug information for troubleshooting
   console.log('AirNow debug info:', JSON.stringify(finalResult.debug, null, 2));
   return finalResult;
 }
