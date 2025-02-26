@@ -237,22 +237,38 @@ function getCardinal(deg){
   return dirs[idx];
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Map Display
-////////////////////////////////////////////////////////////////////////////////
-
 // Helper to convert wind degrees to an arrow symbol (rounded to nearest 45°)
 function getWindArrow(deg) {
-  const directions = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+  const directions = ['↑','↗','→','↘','↓','↙','←','↖'];
   const idx = Math.round(deg / 45) % 8;
   return directions[idx];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Google Map URL generation
+////////////////////////////////////////////////////////////////////////////////
+
+function getCustomMarkerUrl(aqi, color) {
+  // Uses Google Chart API to generate a marker icon with the AQI as text.
+  return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${aqi}|${color}|FFFFFF`;
+}
+
+function getWindMarkerUrl(windDeg, windSpeed) {
+  // Arrow character + speed, pinned on a colored marker
+  const arrow = getWindArrow(windDeg);
+  // color = orange in hex => FFA500
+  // label text => arrow + speed
+  return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${encodeURIComponent(arrow + windSpeed)}|FFA500|000000`;
 }
 
 // Generate a Google Static Maps URL for AirNow
 function generateGoogleMapsUrlForAirNow(adr, an) {
   const key = process.env.GOOGLE_MAPS_API_KEY || '';
   let markers = [];
+  // Blue "H" at home
   markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
+
+  // Determine bounding box for visibility
   let visibleParam = `${adr.lat},${adr.lon}`;
   if (an.data_json && an.data_json.debug && an.data_json.debug.tries && an.data_json.debug.tries.length) {
     const lastTry = an.data_json.debug.tries[an.data_json.debug.tries.length - 1];
@@ -261,6 +277,7 @@ function generateGoogleMapsUrlForAirNow(adr, an) {
       visibleParam = `${bb.minLat},${bb.minLon}|${bb.maxLat},${bb.maxLon}`;
     }
   }
+  // Add red pins for each sensor
   if (an.data_json && an.data_json.debug && an.data_json.debug.sensors && an.data_json.debug.sensors.length) {
     an.data_json.debug.sensors.forEach(sensor => {
       const iconUrl = getCustomMarkerUrl(sensor.aqi, 'FF0000');
@@ -275,13 +292,13 @@ function generateGoogleMapsUrlForAirNow(adr, an) {
 function generateGoogleMapsUrlForPurpleAir(adr, pa) {
   const key = process.env.GOOGLE_MAPS_API_KEY || '';
   let markers = [];
-  // User home marker (blue with label "H")
+  // Home marker (blue)
   markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
-  
+
   let latitudes = [], longitudes = [];
   if (pa.data_json && pa.data_json.debug && pa.data_json.debug.sensors && pa.data_json.debug.sensors.length) {
     pa.data_json.debug.sensors.forEach(sensor => {
-      // Use a green marker for PurpleAir sensors with a custom icon that shows the AQI.
+      // green marker for PurpleAir
       const iconUrl = getCustomMarkerUrl(sensor.aqi, '008000');
       markers.push(`markers=${encodeURIComponent(`icon:${iconUrl}|${sensor.lat},${sensor.lon}`)}`);
       latitudes.push(sensor.lat);
@@ -304,42 +321,28 @@ function generateGoogleMapsUrlForPurpleAir(adr, pa) {
 function generateGoogleMapsUrlForOpenWeather(adr, ow) {
   const key = process.env.GOOGLE_MAPS_API_KEY || '';
   let markers = [];
-  // User home marker (blue H)
+  // Blue H
   markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
-  
-  // Wind marker(s): use current wind data
+
+  // Three arrow markers for wind direction
   const windSpeed = (ow.data_json && ow.data_json.windSpeed) ? ow.data_json.windSpeed : 0;
   const windDeg = (ow.data_json && ow.data_json.windDeg) ? ow.data_json.windDeg : 0;
   const windIconUrl = getWindMarkerUrl(windDeg, windSpeed);
-  const offset = 0.005; // offset for markers
+  const offset = 0.005;
   markers.push(`markers=${encodeURIComponent(`icon:${windIconUrl}|${adr.lat + offset},${adr.lon}`)}`);
   markers.push(`markers=${encodeURIComponent(`icon:${windIconUrl}|${adr.lat},${adr.lon + offset}`)}`);
   markers.push(`markers=${encodeURIComponent(`icon:${windIconUrl}|${adr.lat - offset},${adr.lon}`)}`);
-  
-  // Remove or comment out the temperature marker:
-  const tempF = (ow.data_json && ow.data_json.tempF) ? ow.data_json.tempF : 0;
-  markers.push(`markers=${encodeURIComponent(`color:purple|label:T:${tempF}|${adr.lat - 0.01},${adr.lon + 0.01}`)}`);
-  
+
+  // We have removed the purple "temp" balloon by request:
+  // (No extra marker for temperature now.)
+
   const visibleParam = `${adr.lat - 0.03},${adr.lon - 0.03}|${adr.lat + 0.03},${adr.lon + 0.03}`;
   const markerParams = markers.join('&');
-  // Map size increased to 600x600
   return `https://maps.googleapis.com/maps/api/staticmap?size=600x600&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
 }
 
-
-function getCustomMarkerUrl(aqi, color) {
-  // Uses Google Chart API to generate a marker icon with the AQI as text.
-  return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${aqi}|${color}|FFFFFF`;
-}
-
-function getWindMarkerUrl(windDeg, windSpeed) {
-  const arrow = getWindArrow(windDeg);
-  // Generate a marker icon using Google Chart API with an arrow and wind speed
-  return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${arrow}${windSpeed}|FFA500|000000`;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
-// Passport: local, google, apple
+// Passport
 ////////////////////////////////////////////////////////////////////////////////
 
 passport.use('local', new LocalStrategy({
@@ -465,7 +468,6 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
   while (!chosenSensors.length && attempts < maxAttempts) {
     attempts++;
 
-    // Convert miles to roughly degrees (about 69 miles per degree lat)
     const latOffset = radiusMiles / 69;
     const lonOffset = radiusMiles / 69;
     const minLat = row.lat - latOffset;
@@ -473,7 +475,6 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
     const minLon = row.lon - lonOffset;
     const maxLon = row.lon + lonOffset;
 
-    // Call PurpleAir bounding-box API
     const fields = 'sensor_index,last_seen,latitude,longitude,uptime,confidence,voc,pm1.0,pm2.5,pm2.5_60minute,pm2.5_alt,pm10.0,position_rating,ozone1';
     const resp = await axios.get('https://api.purpleair.com/v1/sensors', {
       headers: { 'X-API-Key': process.env.PURPLEAIR_API_KEY },
@@ -489,15 +490,11 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
 
     const data = resp.data?.data || [];
     if (!data.length) {
-      // No sensors at all => expand and try again
       radiusMiles *= 2;
       continue;
     }
 
-    // We got some sensors => let’s keep them, ignoring the "<= radiusMiles" distance filter
-    // We'll parse them into objects, compute distance, then pick the 10 physically closest
     const nowSec = Math.floor(Date.now() / 1000);
-
     let sensorDetails = data.map(arr => ({
       sensorIndex: arr[0],
       lastSeen: arr[1],
@@ -514,32 +511,21 @@ async function initializePurpleAirSensorsForAddress(addressId, userRadiusMiles) 
       position_rating: arr[12],
       ozone1: arr[13]
     }));
-
-    // Optionally filter out sensors not updated in last hour
     sensorDetails = sensorDetails.filter(s => (nowSec - s.lastSeen) <= 3600);
 
-    // Compute distance for each
     sensorDetails.forEach(s => {
       s.distMiles = distanceMiles(row.lat, row.lon, s.lat, s.lon);
     });
 
-    // Sort by distance ascending
     sensorDetails.sort((a, b) => a.distMiles - b.distMiles);
-
-    // We only want the 10 physically closest sensors
     chosenSensors = sensorDetails.slice(0, 10);
-
-    // Break out immediately after storing
     break;
   }
 
   if (!chosenSensors.length) {
-    // We never found any sensors after expansions => store blank
     await query('UPDATE user_addresses SET purpleair_sensor_ids=$1 WHERE id=$2', ['', addressId]);
     return;
   }
-
-  // Otherwise, build a show_only list of sensor indices
   const sensorIDs = chosenSensors.map(s => s.sensorIndex).join(',');
   await query('UPDATE user_addresses SET purpleair_sensor_ids=$1 WHERE id=$2', [sensorIDs, addressId]);
 }
@@ -562,18 +548,15 @@ async function fetchPurpleAirForAddressWithCache(addressRow) {
   return result;
 }
 
-// REPLACE your entire fetchPurpleAirForAddress function with this dynamic approach
 async function fetchPurpleAirForAddress(addressRow) {
   if (!addressRow.purpleair_sensor_ids) {
     return { closest: 0, average: 0, debug: { fallback: 'No sensor IDs' } };
   }
-
   const showOnly = addressRow.purpleair_sensor_ids;
   if (!showOnly) {
     return { closest: 0, average: 0, debug: { fallback: 'No sensor IDs string' } };
   }
 
-  // We'll request these columns. PurpleAir might shuffle or add others, so let's map them by name below.
   const requestedFields = [
     "sensor_index",
     "last_seen",
@@ -600,10 +583,8 @@ async function fetchPurpleAirForAddress(addressRow) {
     }
   });
 
-  // Confirm the actual fields array from the response:
   const actualFields = resp.data.fields || [];
   const data = resp.data.data || [];
-
   if (!data.length) {
     return {
       closest: 0,
@@ -616,18 +597,13 @@ async function fetchPurpleAirForAddress(addressRow) {
     };
   }
 
-  // We'll create a lookup:  field -> index
-  // so we can safely read arr[indexOf["latitude"]] for lat, etc.
   const indexOf = {};
   for (let i = 0; i < actualFields.length; i++) {
     indexOf[actualFields[i]] = i;
   }
 
-  // We'll parse the array lines using the dynamic indexes
-  // If a field name doesn't exist, we do indexOf[field] == null => skip
-  let sensorDetails = data.map((arr) => {
+  let sensorDetails = data.map(arr => {
     const nowSec = Math.floor(Date.now() / 1000);
-
     const sensor = {
       sensorIndex: 0,
       lastSeen: 0,
@@ -644,8 +620,6 @@ async function fetchPurpleAirForAddress(addressRow) {
       distMiles: 0,
       aqi: 0
     };
-
-    // For each field, check if indexOf has it:
     if (indexOf["sensor_index"] != null) sensor.sensorIndex = arr[indexOf["sensor_index"]];
     if (indexOf["last_seen"] != null) sensor.lastSeen = arr[indexOf["last_seen"]];
     if (indexOf["latitude"] != null) sensor.lat = arr[indexOf["latitude"]];
@@ -659,21 +633,11 @@ async function fetchPurpleAirForAddress(addressRow) {
     if (indexOf["pm10.0"] != null) sensor.pm10_0 = arr[indexOf["pm10.0"]];
     if (indexOf["ozone1"] != null) sensor.ozone1 = arr[indexOf["ozone1"]];
 
-    // Filter out sensors older than 1 hour
     const ageSec = nowSec - sensor.lastSeen;
-    if (ageSec > 3600) {
-      // We'll mark a property "ignore: true" so we can filter it out below
-      sensor.ignore = true;
-    }
-
-    // We'll do distanceMiles after
+    if (ageSec > 3600) sensor.ignore = true;
     return sensor;
   });
-
-  // Filter out sensors older than 1 hour
-  sensorDetails = sensorDetails.filter((s) => !s.ignore);
-
-  // If none left after older check:
+  sensorDetails = sensorDetails.filter(s => !s.ignore);
   if (!sensorDetails.length) {
     return {
       closest: 0,
@@ -686,11 +650,8 @@ async function fetchPurpleAirForAddress(addressRow) {
       }
     };
   }
-
-  // Compute distances, fallback logic for pm2.5 => pm2_5_60m => pm2_5_alt => 0
-  sensorDetails.forEach((s) => {
+  sensorDetails.forEach(s => {
     s.distMiles = distanceMiles(addressRow.lat, addressRow.lon, s.lat, s.lon);
-
     let rawPM25 = s.pm2_5;
     if (rawPM25 == null) {
       if (s.pm2_5_60m != null) rawPM25 = s.pm2_5_60m;
@@ -700,13 +661,9 @@ async function fetchPurpleAirForAddress(addressRow) {
     s.aqi = pm25toAQI(rawPM25);
   });
 
-  // Sum up for average, find the physically closest
-  let sum = 0;
-  let count = 0;
-  let closestDist = Infinity;
-  let closestVal = 0;
-
-  sensorDetails.forEach((s) => {
+  let sum = 0, count = 0;
+  let closestDist = Infinity, closestVal = 0;
+  sensorDetails.forEach(s => {
     sum += s.aqi;
     count++;
     if (s.distMiles < closestDist) {
@@ -714,7 +671,6 @@ async function fetchPurpleAirForAddress(addressRow) {
       closestVal = s.aqi;
     }
   });
-
   if (count === 0) {
     return {
       closest: 0,
@@ -727,10 +683,7 @@ async function fetchPurpleAirForAddress(addressRow) {
       }
     };
   }
-
   const avg = Math.round(sum / count);
-
-  // Return final debug, listing the sensor objects
   return {
     closest: closestVal,
     average: avg,
@@ -741,15 +694,15 @@ async function fetchPurpleAirForAddress(addressRow) {
       sensorCount: count,
       nearestDistance: closestDist,
       fieldsReturned: actualFields,
-      sensors: sensorDetails.map((s) => ({
+      sensors: sensorDetails.map(s => ({
         sensorIndex: s.sensorIndex,
         lat: s.lat,
         lon: s.lon,
-        distMiles: s.distMiles, // in miles
+        distMiles: s.distMiles,
         pm2_5_cf_1: s.pm2_5,
         pm2_5_60m: s.pm2_5_60m,
         pm2_5_alt: s.pm2_5_alt,
-        pm1_0_cf_1: s.pm1_0,
+        pm1_0: s.pm1_0,
         pm10_0: s.pm10_0,
         ozone1: s.ozone1,
         voc: s.voc,
@@ -762,23 +715,16 @@ async function fetchPurpleAirForAddress(addressRow) {
 }
 
 async function fetchAirNowAQIWithCache(lat, lon, initialMiles) {
-  // Build a key. For example, lat,lon, plus we can store the current hour or radius
   const key = `airnow:${lat},${lon},${initialMiles}`;
   const cached = memoAirNow.get(key);
   if (cached) {
-    // check if it's still valid
     if (nowMs() - cached.timestamp < MEMO_TTL_MS) {
-      // return the cached data immediately
       return cached.data;
     } else {
-      // remove the old entry
       memoAirNow.delete(key);
     }
   }
-
-  // If not cached, we call the real function
   const result = await fetchAirNowAQI(lat, lon, initialMiles);
-  // store it
   memoAirNow.set(key, {
     timestamp: nowMs(),
     data: result
@@ -868,7 +814,7 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
           finalResult.average = avg;
           finalResult.debug.tries.push(debugInfo);
           foundSensors = true;
-          finalResult.debug.nearestDistance = closestDist; // set nearestDistance here
+          finalResult.debug.nearestDistance = closestDist;
         }
       }
     } catch (e) {
@@ -916,11 +862,14 @@ async function fetchOpenWeather(lat,lon){
 async function getOpenWeather24hrAverages(addressId) {
   const since = new Date(Date.now() - 24 * 3600 * 1000);
   const res = await query(`
-    SELECT AVG((data_json->>'tempF')::numeric) as avgTemp,
-           AVG((data_json->>'windSpeed')::numeric) as avgWindSpeed,
-           AVG((data_json->>'windDeg')::numeric) as avgWindDeg
+    SELECT 
+      AVG((data_json->>'tempF')::numeric) as avgTemp,
+      AVG((data_json->>'windSpeed')::numeric) as avgWindSpeed,
+      AVG((data_json->>'windDeg')::numeric) as avgWindDeg
     FROM address_hourly_data
-    WHERE address_id=$1 AND source='OpenWeather' AND timestamp >= $2
+    WHERE address_id=$1 
+      AND source='OpenWeather' 
+      AND timestamp >= $2
   `, [addressId, since]);
   if (!res.rows.length) return null;
   const avgTemp = res.rows[0].avgtemp || 0;
@@ -961,12 +910,12 @@ async function earliestTimestampForAddress(addressId, source) {
 
 function format24hrAvailable(earliest) {
   if (!earliest) return 'No data yet';
+  // earliest + 24 hours
   const availableTime = new Date(earliest.getTime() + 24 * 3600 * 1000);
-  return availableTime.toLocaleString();
+  return formatDayTimeForUser(availableTime);
 }
 
 async function updateTrailing24hAverages(userId, addressId, timestamp, source) {
-  // Only consider entries with aqi_closest > 0 for AirNow and PurpleAir
   let condition = "";
   if (source === 'AirNow' || source === 'PurpleAir') {
     condition = "AND aqi_closest > 0";
@@ -982,9 +931,8 @@ async function updateTrailing24hAverages(userId, addressId, timestamp, source) {
       AND timestamp >= $4
       ${condition}
   `, [userId, addressId, source, new Date(timestamp.getTime() - 24 * 3600 * 1000)]);
-  
+
   if (!rows.rows.length) return;
-  
   const c24 = Math.round(rows.rows[0].cavg || 0);
   const r24 = Math.round(rows.rows[0].ravg || 0);
   const count = Number(rows.rows[0].cnt) || 0;
@@ -1001,6 +949,7 @@ async function updateTrailing24hAverages(userId, addressId, timestamp, source) {
   let dbRow = newRow.rows[0];
   let d = dbRow.data_json || {};
 
+  // We define "24hr average" only if we have at least 24 data points. (Or your business logic.)
   if (count >= 24) {
     d.closest24hrAvg = c24;
     d.radius24hrAvg = r24;
@@ -1099,6 +1048,7 @@ async function fetchAndStoreHourlyDataForUser(userId){
     await updateTrailing24hAverages(userId,adr.id,now,'OpenWeather');
   }
 }
+
 async function latestSourceRow(addressId,source){
   const rec=await query(`
     SELECT * FROM address_hourly_data
@@ -1129,7 +1079,6 @@ cron.schedule('*/15 * * * *', async()=>{
   console.log('[CRON] daily check');
   try{
     const now = new Date();
-    // Use UTC hours/minutes (adjust if needed)
     const hour = now.getUTCHours();
     const minute = now.getUTCMinutes();
     const block = Math.floor(minute / 15) * 15;
@@ -1144,7 +1093,7 @@ cron.schedule('*/15 * * * *', async()=>{
       const final = await buildDailyEmail(du.id);
       if(final){
         await sendEmail(du.email,'Your Daily AQI Update',final);
-        console.log(`Sent daily update to ${du.email}`);
+        console.log(\`Sent daily update to \${du.email}\`);
       }
     }
   }catch(e){
@@ -1167,7 +1116,7 @@ async function buildDailyEmail(userId) {
     }
     lines.push(`<h4>Address: ${adr.address}</h4>`);
     
-    // AirNow section
+    // AirNow
     const an = await latestSourceRow(adr.id, 'AirNow');
     if (an) {
       let c = an.aqi_closest || 0;
@@ -1176,21 +1125,20 @@ async function buildDailyEmail(userId) {
       let r24 = an.radius_24hr_avg;
       if (c24 == null) {
         const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
-        c24 = `Available at ${formatDayTimeForUser(new Date(earliest.getTime() + 24 * 3600 * 1000))}`;
+        c24 = `Available at ${format24hrAvailable(earliest)}`;
       }
       if (r24 == null) {
         const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
-        r24 = `Available at ${formatDayTimeForUser(new Date(earliest.getTime() + 24 * 3600 * 1000))}`;
+        r24 = `Available at ${format24hrAvailable(earliest)}`;
       }
-      // Generate map URL using the server-side function:
       const mapUrlAir = generateGoogleMapsUrlForAirNow({ lat: adr.lat, lon: adr.lon }, an);
-      lines.push(`AirNow: Closest AQI=${c} (Nearest sensor: ${an.debug.nearestDistance ? an.debug.nearestDistance.toFixed(1) + ' miles' : 'N/A'}), Radius Avg=${r}, 24hr Closest Avg=${c24}, 24hr Radius Avg=${r24}<br>
+      lines.push(`AirNow: Closest AQI=${c}, Radius Avg=${r}, 24hr Closest Avg=${c24}, 24hr Radius Avg=${r24}<br>
       <img src="${mapUrlAir}" alt="AirNow Map" style="max-width:100%;">`);
     } else {
       lines.push(`AirNow: No data`);
     }
     
-    // PurpleAir section
+    // PurpleAir
     const pa = await latestSourceRow(adr.id, 'PurpleAir');
     if (pa) {
       let c = pa.aqi_closest || 0;
@@ -1199,11 +1147,11 @@ async function buildDailyEmail(userId) {
       let r24 = pa.radius_24hr_avg;
       if (c24 == null) {
         const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
-        c24 = `Available at ${formatDayTimeForUser(new Date(earliest.getTime() + 24 * 3600 * 1000))}`;
+        c24 = `Available at ${format24hrAvailable(earliest)}`;
       }
       if (r24 == null) {
         const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
-        r24 = `Available at ${formatDayTimeForUser(new Date(earliest.getTime() + 24 * 3600 * 1000))}`;
+        r24 = `Available at ${format24hrAvailable(earliest)}`;
       }
       const mapUrlPa = generateGoogleMapsUrlForPurpleAir({ lat: adr.lat, lon: adr.lon }, pa);
       lines.push(`PurpleAir: Closest AQI=${c}, Radius Avg=${r}, 24hr Closest Avg=${c24}, 24hr Radius Avg=${r24}<br>
@@ -1212,16 +1160,13 @@ async function buildDailyEmail(userId) {
       lines.push(`PurpleAir: No data`);
     }
     
-    // OpenWeather section
+    // OpenWeather
     const ow = await latestSourceRow(adr.id, 'OpenWeather');
     if (ow) {
       const d = ow.data_json || {};
-      let c24 = (d.ow24hrTemp !== undefined)
-        ? d.ow24hrTemp
-        : `Available at ${formatDayTimeForUser(new Date((await earliestTimestampForAddress(adr.id, 'OpenWeather')).getTime() + 24*3600*1000))}`;
+      lines.push(`OpenWeather: Temp=${d.tempF||0}°F, Wind=${d.windSpeed||0} mph from ${d.windDir||'??'} (${d.windDeg||0}°)`);
       const mapUrlOw = generateGoogleMapsUrlForOpenWeather({ lat: adr.lat, lon: adr.lon }, ow);
-      lines.push(`OpenWeather: Now: Temp=${d.tempF || 0}°F, Wind=${d.windSpeed || 0} mph (${d.windDir || 'N/A'} at ${d.windDeg || 0}°), 24hr Avg Temp=${c24}<br>
-      <img src="${mapUrlOw}" alt="OpenWeather Map" style="max-width:100%;">`);
+      lines.push(`<img src="${mapUrlOw}" alt="OpenWeather Map" style="max-width:100%;">`);
     } else {
       lines.push(`OpenWeather: No data`);
     }
@@ -1230,7 +1175,284 @@ async function buildDailyEmail(userId) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Routes
+// Build the HTML report for dashboard
+////////////////////////////////////////////////////////////////////////////////
+
+async function buildAirNowSection(adr, an) {
+  if (!an) return `<p>AirNow => No data</p>`;
+  const c = an.aqi_closest || 0;
+  const r = an.aqi_average || 0;
+  const cat = colorCodeAQI(c);
+  const cStyle = getAQIColorStyle(c);
+  const rStyle = getAQIColorStyle(r);
+
+  let c24 = an.closest_24hr_avg;
+  let r24 = an.radius_24hr_avg;
+  if (c24 == null) {
+    const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
+    c24 = `Available at ${format24hrAvailable(earliest)}`;
+  }
+  if (r24 == null) {
+    const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
+    r24 = `Available at ${format24hrAvailable(earliest)}`;
+  }
+  const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
+  const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
+
+  let nearestLine = '';
+  if (an.data_json?.debug?.nearestDistance !== undefined) {
+    nearestLine = `<br>Nearest sensor is ${an.data_json.debug.nearestDistance.toFixed(1)} miles away`;
+  }
+  const debugObj = an.data_json?.debug || {};
+  const debugHTML = buildDebugPopupHTML(debugObj, 'AirNow Debug');
+
+  return `
+    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
+      <thead>
+        <tr style="background:#f0f0f0;"><th colspan="2">AirNow</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Current Closest AQI</td>
+          <td style="${cStyle}">
+            ${c} (${cat})
+            <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
+               onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
+               [details]
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td>Current Radius Average</td>
+          <td style="${rStyle}">${r}</td>
+        </tr>
+        <tr>
+          <td>Closest 24hr Average</td>
+          <td style="${c24Style}">${c24}</td>
+        </tr>
+        <tr>
+          <td>Radius 24hr Average</td>
+          <td style="${r24Style}">${r24}</td>
+        </tr>
+        <tr>
+          <td>Nearest Sensor Distance</td>
+          <td>${nearestLine}</td>
+        </tr>
+        <tr>
+          <td colspan="2">
+            <a href="#" onclick="showMapPopup('AirNow','${encodeURIComponent(JSON.stringify(adr))}','${encodeURIComponent(JSON.stringify(an))}');return false;">
+              [view on map]
+            </a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+async function buildPurpleAirSection(adr, pa) {
+  if (!pa) return `<p>PurpleAir => No data</p>`;
+  const c = pa.aqi_closest || 0;
+  const r = pa.aqi_average || 0;
+  const cat = colorCodeAQI(c);
+  const cStyle = getAQIColorStyle(c);
+  const rStyle = getAQIColorStyle(r);
+
+  let c24 = pa.closest_24hr_avg;
+  let r24 = pa.radius_24hr_avg;
+  if (c24 == null) {
+    const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
+    c24 = `Available at ${format24hrAvailable(earliest)}`;
+  }
+  if (r24 == null) {
+    const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
+    r24 = `Available at ${format24hrAvailable(earliest)}`;
+  }
+  const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
+  const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
+
+  let nearestLine = '';
+  if (pa.data_json?.debug?.nearestDistance !== undefined) {
+    nearestLine = `<br>Nearest sensor is ${pa.data_json.debug.nearestDistance.toFixed(1)} miles away`;
+  }
+  const debugObj = pa.data_json?.debug || {};
+  const debugHTML = buildDebugPopupHTML(debugObj, 'PurpleAir Debug');
+
+  return `
+    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
+      <thead>
+        <tr style="background:#f0f0f0;"><th colspan="2">PurpleAir</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Current Closest AQI</td>
+          <td style="${cStyle}">
+            ${c} (${cat})
+            <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
+               onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
+               [details]
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td>Current Radius Average</td>
+          <td style="${rStyle}">${r}</td>
+        </tr>
+        <tr>
+          <td>Closest 24hr Average</td>
+          <td style="${c24Style}">${c24}</td>
+        </tr>
+        <tr>
+          <td>Radius 24hr Average</td>
+          <td style="${r24Style}">${r24}</td>
+        </tr>
+        <tr>
+          <td>Nearest Sensor Distance</td>
+          <td>${nearestLine}</td>
+        </tr>
+        <tr>
+          <td colspan="2">
+            <a href="#" onclick="showMapPopup('PurpleAir','${encodeURIComponent(JSON.stringify(adr))}','${encodeURIComponent(JSON.stringify(pa))}');return false;">
+              [view on map]
+            </a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+async function buildOpenWeatherSection(adr, ow) {
+  if (!ow) return `<p>OpenWeather => No data</p>`;
+
+  const d = ow.data_json || {};
+  // Gather 24hr avg data
+  const avg = await getOpenWeather24hrAverages(adr.id);
+
+  let avgInfo = '';
+  if (!avg || (!avg.avgTemp && !avg.avgWindSpeed)) {
+    // No average yet => show earliest time
+    const earliest = await earliestTimestampForAddress(adr.id, 'OpenWeather');
+    avgInfo = `Available at ${format24hrAvailable(earliest)}`;
+  } else {
+    const t = Math.round(avg.avgTemp);
+    const wS = Math.round(avg.avgWindSpeed);
+    const wD = Math.round(avg.avgWindDeg);
+    const wC = avg.windCardinal;
+    avgInfo = `Temp=${t}F, Wind=${wS} mph from ${wC} (${wD}°)`;
+  }
+
+  const debugObj = d.debug || {};
+  const debugHTML = buildDebugPopupHTML(debugObj, 'OpenWeather Debug');
+
+  return `
+    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
+      <thead>
+        <tr style="background:#f0f0f0;"><th colspan="2">OpenWeather</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Current Hourly</td>
+          <td>
+            Temp=${d.tempF || 0}F, 
+            Wind=${d.windSpeed || 0} mph from ${d.windDir || 'N/A'} (${d.windDeg || 0}°)
+            <a href="#" data-debug="${encodeURIComponent(debugHTML)}" 
+               onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
+               [details]
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td>24hr Average</td>
+          <td>${avgInfo}</td>
+        </tr>
+        <tr>
+          <td colspan="2">
+            <a href="#" onclick="showMapPopup('OpenWeather','${encodeURIComponent(JSON.stringify(adr))}','${encodeURIComponent(JSON.stringify(ow))}');return false;">
+              [view on map]
+            </a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+function buildDebugPopupHTML(debugObj, title) {
+  const raw = JSON.stringify(debugObj, null, 2);
+  return `<h3>${title}</h3><pre>${raw.replace(/`/g, '\\`')}</pre>`;
+}
+
+async function buildAddressReportHTML(adr, an, pa, ow) {
+  let html = '';
+  html += await buildAirNowSection(adr, an);
+  html += await buildPurpleAirSection(adr, pa);
+  html += await buildOpenWeatherSection(adr, ow);
+  return html;
+}
+
+// GET /api/myReport
+app.get('/api/myReport', ensureAuth, async(req,res)=>{
+  try{
+    const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[req.user.id]);
+    if(!addrRes.rows.length){
+      return res.json({error:'No addresses. Please add an address.'});
+    }
+    let html='';
+    for(const adr of addrRes.rows){
+      html+=`<h4>Address: ${adr.address}</h4>`;
+      if(!adr.lat||!adr.lon){
+        html+=`<p>(No lat/lon, cannot produce AQI)</p>`;
+        continue;
+      }
+      let an=await latestSourceRow(adr.id,'AirNow');
+      let pa=await latestSourceRow(adr.id,'PurpleAir');
+      let ow=await latestSourceRow(adr.id,'OpenWeather');
+      html += await buildAddressReportHTML(adr, an, pa, ow);
+    }
+    res.json({html});
+  } catch(e){
+    console.error('[myReport error]', e);
+    res.status(500).json({error:'Internal server error'});
+  }
+});
+
+// Return static map URL
+app.get('/api/getMapUrl', async (req, res) => {
+  const { source, lat, lon, data } = req.query;
+  if (!source || !lat || !lon) {
+    return res.status(400).json({ error: 'Missing required parameters' });
+  }
+  try {
+    let url = "";
+    const adr = { lat: parseFloat(lat), lon: parseFloat(lon) };
+    let parsedData = {};
+    if (data) {
+      try {
+        parsedData = JSON.parse(decodeURIComponent(data));
+      } catch (e) {
+        console.error("Error parsing data JSON:", e);
+      }
+    }
+
+    if (source === "OpenWeather") {
+      url = generateGoogleMapsUrlForOpenWeather(adr, { data_json: parsedData });
+    } else if (source === "AirNow") {
+      url = generateGoogleMapsUrlForAirNow(adr, { data_json: parsedData });
+    } else if (source === "PurpleAir") {
+      url = generateGoogleMapsUrlForPurpleAir(adr, { data_json: parsedData });
+    } else {
+      return res.status(400).json({ error: "Unknown source" });
+    }
+    return res.json({ url });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// All other routes (signup, etc.)
 ////////////////////////////////////////////////////////////////////////////////
 
 app.use(express.static(__dirname));
@@ -1331,26 +1553,20 @@ app.post('/api/add-address', ensureAuth, async(req,res)=>{
   res.redirect('/html/dashboard.html');
 });
 
-// delete address
-// REPLACE your entire delete-address route with this:
+// delete address (with references)
 app.post('/api/delete-address', ensureAuth, async (req, res) => {
   const { addressId } = req.body;
   if (!addressId) return res.status(400).send('No addressId');
 
   try {
-    // 1) Delete references in address_hourly_data
     await query(
       'DELETE FROM address_hourly_data WHERE address_id = $1 AND user_id = $2',
       [addressId, req.user.id]
     );
-
-    // 2) Delete from user_addresses
     await query(
       'DELETE FROM user_addresses WHERE id = $1 AND user_id = $2',
       [addressId, req.user.id]
     );
-
-    // 3) Done
     return res.redirect('/html/dashboard.html');
   } catch (err) {
     console.error('[delete-address error]', err);
@@ -1382,281 +1598,7 @@ app.post('/api/set-daily-time', ensureAuth, async(req,res)=>{
   res.json({success:true});
 });
 
-// list addresses
-app.get('/api/list-addresses', ensureAuth, async(req,res)=>{
-  try{
-    const {rows}=await query('SELECT id,address,lat,lon FROM user_addresses WHERE user_id=$1 ORDER BY id',[req.user.id]);
-    res.json(rows);
-  }catch(e){
-    console.error('/api/list-addresses error', e);
-    res.status(500).json({error:'Internal error'});
-  }
-});
-
-app.get('/api/myReport', ensureAuth, async(req,res)=>{
-  try{
-    const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[req.user.id]);
-    if(!addrRes.rows.length){
-      return res.json({error:'No addresses. Please add an address.'});
-    }
-    let html='';
-    for(const adr of addrRes.rows){
-      html+=`<h4>Address: ${adr.address}</h4>`;
-      if(!adr.lat||!adr.lon){
-        html+=`<p>(No lat/lon, cannot produce AQI)</p>`;
-        continue;
-      }
-      let an=await latestSourceRow(adr.id,'AirNow');
-      let pa=await latestSourceRow(adr.id,'PurpleAir');
-      let ow=await latestSourceRow(adr.id,'OpenWeather');
-      html+=await buildAddressReportHTML(adr,an,pa,ow);
-    }
-    res.json({html});
-  } catch(e){
-    console.error('[myReport error]', e);
-    res.status(500).json({error:'Internal server error'});
-  }
-});
-
-// Place this near your other route definitions in server.js:
-app.get('/api/getMapUrl', async (req, res) => {
-  const { source, lat, lon, data } = req.query;
-  if (!source || !lat || !lon) {
-    return res.status(400).json({ error: 'Missing required parameters' });
-  }
-  try {
-    let url = "";
-    const adr = { lat: parseFloat(lat), lon: parseFloat(lon) };
-    if (source === "OpenWeather") {
-      let owData = {};
-      if (data) {
-        try {
-          owData = JSON.parse(decodeURIComponent(data));
-        } catch (e) {
-          console.error("Error parsing OpenWeather data:", e);
-        }
-      }
-      url = generateGoogleMapsUrlForOpenWeather(adr, { data_json: owData });
-    } else if (source === "AirNow") {
-      let airData = {};
-      if (data) {
-        try {
-          airData = JSON.parse(decodeURIComponent(data));
-        } catch (e) {
-          console.error("Error parsing AirNow data:", e);
-        }
-      }
-      url = generateGoogleMapsUrlForAirNow(adr, { data_json: airData });
-    } else if (source === "PurpleAir") {
-      let paData = {};
-      if (data) {
-        try {
-          paData = JSON.parse(decodeURIComponent(data));
-        } catch (e) {
-          console.error("Error parsing PurpleAir data:", e);
-        }
-      }
-      url = generateGoogleMapsUrlForPurpleAir(adr, { data_json: paData });
-    } else {
-      return res.status(400).json({ error: "Unknown source" });
-    }
-    return res.json({ url });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: "Server error" });
-  }
-});
-
-async function buildAirNowSection(adr, an) {
-  if (!an) return `<p>AirNow => No data</p>`;
-
-  const c = an.aqi_closest || 0;
-  const r = an.aqi_average || 0;
-  const cat = colorCodeAQI(c);
-  const cStyle = getAQIColorStyle(c);
-  const rStyle = getAQIColorStyle(r);
-
-  let c24 = an.closest_24hr_avg;
-  let r24 = an.radius_24hr_avg;
-  if (c24 == null) {
-    const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
-    c24 = `Available at ${format24hrAvailable(earliest)}`;
-  }
-  if (r24 == null) {
-    const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
-    r24 = `Available at ${format24hrAvailable(earliest)}`;
-  }
-  const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
-  const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
-
-  let nearestLine = '';
-  if (an.data_json?.debug?.nearestDistance !== undefined) {
-    nearestLine = `<br>Nearest sensor is ${an.data_json.debug.nearestDistance.toFixed(1)} miles away`;
-  }
-
-  const debugObj = an.data_json?.debug || {};
-  const debugHTML = buildDebugPopupHTML(debugObj, 'AirNow Debug');
-
-  return `
-    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
-      <thead>
-        <tr style="background:#f0f0f0;"><th colspan="2">AirNow</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Current Closest AQI</td>
-          <td style="${cStyle}">
-            ${c} (${cat})
-            <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
-               onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
-               [details]
-            </a>
-          </td>
-        </tr>
-        <tr>
-          <td>Current Radius Average</td>
-          <td style="${rStyle}">${r}</td>
-        </tr>
-        <tr>
-          <td>Closest 24hr Average</td>
-          <td style="${c24Style}">${c24}</td>
-        </tr>
-        <tr>
-          <td>Radius 24hr Average</td>
-          <td style="${r24Style}">${r24}</td>
-        </tr>
-        <tr>
-          <td>Nearest Sensor Distance</td>
-          <td>${nearestLine}</td>
-        </tr>
-        <tr>
-          <td colspan="2"><a href="#" onclick="showMapPopup('AirNow', ${encodeURIComponent(JSON.stringify(adr))}, ${encodeURIComponent(JSON.stringify(an))}); return false;">[view on map]</a></td>
-        </tr>
-      </tbody>
-    </table>
-  `;
-}
-
-// PurpleAir Section
-
-async function buildPurpleAirSection(adr, pa) {
-  if (!pa) return `<p>PurpleAir => No data</p>`;
-  
-  const c = pa.aqi_closest || 0;
-  const r = pa.aqi_average || 0;
-  const cat = colorCodeAQI(c);
-  const cStyle = getAQIColorStyle(c);
-  const rStyle = getAQIColorStyle(r);
-  
-  let c24 = pa.closest_24hr_avg;
-  let r24 = pa.radius_24hr_avg;
-  if (c24 == null) {
-    const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
-    c24 = `Available at ${format24hrAvailable(earliest)}`;
-  }
-  if (r24 == null) {
-    const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
-    r24 = `Available at ${format24hrAvailable(earliest)}`;
-  }
-  const c24Style = (typeof c24 === 'number') ? getAQIColorStyle(c24) : '';
-  const r24Style = (typeof r24 === 'number') ? getAQIColorStyle(r24) : '';
-  
-  let nearestLine = '';
-  if (pa.data_json?.debug?.nearestDistance !== undefined) {
-    nearestLine = `<br>Nearest sensor is ${pa.data_json.debug.nearestDistance.toFixed(1)} miles away`;
-  }
-  
-  const debugObj = pa.data_json?.debug || {};
-  const debugHTML = buildDebugPopupHTML(debugObj, 'PurpleAir Debug');
-  
-  return `
-    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
-      <thead>
-        <tr style="background:#f0f0f0;"><th colspan="2">PurpleAir</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Current Closest AQI</td>
-          <td style="${cStyle}">
-            ${c} (${cat})
-            <a href="#" data-debug="${encodeURIComponent(debugHTML)}"
-               onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">
-               [details]
-            </a>
-          </td>
-        </tr>
-        <tr>
-          <td>Current Radius Average</td>
-          <td style="${rStyle}">${r}</td>
-        </tr>
-        <tr>
-          <td>Closest 24hr Average</td>
-          <td style="${c24Style}">${c24}</td>
-        </tr>
-        <tr>
-          <td>Radius 24hr Average</td>
-          <td style="${r24Style}">${r24}</td>
-        </tr>
-        <tr>
-          <td>Nearest Sensor Distance</td>
-          <td>${nearestLine}</td>
-        </tr>
-        <tr>
-          <td colspan="2"><a href="#" onclick="showMapPopup('PurpleAir', ${encodeURIComponent(JSON.stringify(adr))}, ${encodeURIComponent(JSON.stringify(pa))}); return false;">[view on map]</a></td>
-        </tr>
-      </tbody>
-    </table>
-  `;
-}
-
-async function buildAddressReportHTML(adr, an, pa, ow) {
-  let html = '';
-  html += await buildAirNowSection(adr, an);
-  html += await buildPurpleAirSection(adr, pa);
-  html += await buildOpenWeatherSection(adr, ow);
-  return html;
-}
-
-async function buildOpenWeatherSection(adr, ow) {
-  if (!ow) return `<p>OpenWeather => No data</p>`;
-  const d = ow.data_json || {};
-  let c24 = (d.ow24hrTemp !== undefined)
-    ? d.ow24hrTemp
-    : `Available at ${format24hrAvailable(await earliestTimestampForAddress(adr.id, 'OpenWeather'))}`;
-  const debugObj = d.debug || {};
-  const debugHTML = buildDebugPopupHTML(debugObj, 'OpenWeather Debug');
-  
-  // Build the table with OpenWeather data.
-  const tableHtml = `
-    <table style="border-collapse:collapse;width:100%;margin-bottom:10px;">
-      <thead>
-        <tr style="background:#f0f0f0;"><th colspan="2">OpenWeather</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Current Hourly</td>
-          <td>
-            Temp=${d.tempF || 0}F, Wind=${d.windSpeed || 0} mph from ${d.windDir || '??'} (${d.windDeg || 0}°)
-            <a href="#" data-debug="${encodeURIComponent(debugHTML)}" onclick="showDetailPopup(decodeURIComponent(this.getAttribute('data-debug')), event);return false;">[details]</a>
-          </td>
-        </tr>
-        <tr>
-          <td>24hr Average</td>
-          <td>Temp=${c24}F</td>
-        </tr>
-      </tbody>
-    </table>
-  `;
-  // Instead of inline map, we now include the OpenWeather map below the table.
-  const mapHtml = `<div style="margin-top:10px;"><img src="${generateGoogleMapsUrlForOpenWeather(adr, ow)}" alt="OpenWeather Map" style="max-width:100%;"></div>`;
-  return tableHtml + mapHtml;
-}
-
-function buildDebugPopupHTML(debugObj, title) {
-  const raw = JSON.stringify(debugObj, null, 2);
-  return `<h3>${title}</h3><pre>${raw.replace(/`/g, '\\`')}</pre>`;
-}
-
+// /api/report-now
 app.post('/api/report-now', ensureAuth, async(req,res)=>{
   try{
     await fetchAndStoreHourlyDataForUser(req.user.id);
@@ -1671,10 +1613,7 @@ app.post('/api/report-now', ensureAuth, async(req,res)=>{
   }
 });
 
-////////////////////////////////////////////////////////////////////////////////
-// forgot & reset
-////////////////////////////////////////////////////////////////////////////////
-
+// forgot
 app.post('/api/forgot', async(req,res)=>{
   const {email}=req.body;
   if(!email)return res.status(400).send('No email');
@@ -1694,6 +1633,7 @@ app.post('/api/forgot', async(req,res)=>{
   res.send('If found, a reset link is emailed.');
 });
 
+// reset
 app.post('/api/reset', async(req,res)=>{
   const {token,newPassword}=req.body;
   if(!token||!newPassword)return res.status(400).send('Missing token or newPassword');
@@ -1713,40 +1653,25 @@ app.post('/api/reset', async(req,res)=>{
   res.send('Password reset. <a href="login.html">Log in</a>');
 });
 
-////////////////////////////////////////////////////////////////////////////////
-// delete account
-////////////////////////////////////////////////////////////////////////////////
-
-// REPLACE your entire delete-account route with this:
+// delete-account
 app.post('/api/delete-account', ensureAuth, async (req, res) => {
   const userId = req.user.id;
   try {
-    // 1) Find the user’s email for the farewell message
     const { rows } = await query('SELECT email FROM users WHERE id=$1', [userId]);
     if (!rows.length) {
-      // If user not found, just log them out
       return req.logout(() => res.redirect('/index.html'));
     }
     const userEmail = rows[0].email;
+    await query('DELETE FROM address_hourly_data WHERE user_id=$1',[userId]);
+    await query('DELETE FROM user_addresses WHERE user_id=$1',[userId]);
+    await query('DELETE FROM users WHERE id=$1',[userId]);
 
-    // 2) Delete rows in address_hourly_data => because they reference addresses
-    await query('DELETE FROM address_hourly_data WHERE user_id=$1', [userId]);
-
-    // 3) Delete addresses
-    await query('DELETE FROM user_addresses WHERE user_id=$1', [userId]);
-
-    // 4) Finally, delete the user row
-    await query('DELETE FROM users WHERE id=$1', [userId]);
-
-    // 5) Log them out, then send the farewell email asynchronously
     req.logout(() => {
       sendEmail(
         userEmail,
         'Account Deleted',
         `Your account is deleted.\nNo more emails.\nIf you want to sign up again, just do so from the main site.`
       ).catch(e => console.error('[delete-account email]', e));
-
-      // 6) Redirect to home
       res.redirect('/index.html');
     });
   } catch (err) {
