@@ -1581,11 +1581,7 @@ async function buildPurpleAirSection(adr, pa) {
           <td>${nearestLine}</td>
         </tr>
         <tr>
-          <td colspan="2">
-            <a href="#" onclick="showMapPopup('PurpleAir', ${encodeURIComponent(JSON.stringify(adr))}, ${encodeURIComponent(JSON.stringify(pa))}); return false;">
-              [view on map]
-            </a>
-          </td>
+          <td colspan="2"><a href="#" onclick="showMapPopup('PurpleAir', ${encodeURIComponent(JSON.stringify(adr))}, ${encodeURIComponent(JSON.stringify(pa))}); return false;">[view on map]</a></td>
         </tr>
       </tbody>
     </table>
