@@ -260,12 +260,11 @@
   // Map popup for "[view on map]" links.
   // Calls our server-side proxy at /api/getMapUrl.
   function showMapPopup(source, adrEncoded, dataEncoded) {
+    console.log("Launching map popup for", source);
     const adr = JSON.parse(decodeURIComponent(adrEncoded));
     const data = JSON.parse(decodeURIComponent(dataEncoded));
-    // For security, we call our proxy endpoint so the API key is never exposed.
     const lat = adr.lat;
     const lon = adr.lon;
-    // Encode the data object as a URI component.
     const dataParam = encodeURIComponent(JSON.stringify(data));
     const popup = document.getElementById('detailPopup');
     popup.innerHTML = '<p>Loading map...</p>';
@@ -277,6 +276,7 @@
     fetch(`/api/getMapUrl?source=${source}&lat=${lat}&lon=${lon}&data=${dataParam}`)
       .then(response => response.json())
       .then(result => {
+        console.log("Map URL result:", result);
         if (result.url) {
           const img = document.createElement('img');
           img.src = result.url;
@@ -293,6 +293,7 @@
       });
   }
 </script>
+
 <script src="/js/autocomplete.js"></script>
 </body>
 </html>
