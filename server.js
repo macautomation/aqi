@@ -1079,6 +1079,7 @@ cron.schedule('*/15 * * * *', async()=>{
   console.log('[CRON] daily check');
   try{
     const now = new Date();
+    // Use UTC hours/minutes (adjust if needed)
     const hour = now.getUTCHours();
     const minute = now.getUTCMinutes();
     const block = Math.floor(minute / 15) * 15;
@@ -1093,7 +1094,7 @@ cron.schedule('*/15 * * * *', async()=>{
       const final = await buildDailyEmail(du.id);
       if(final){
         await sendEmail(du.email,'Your Daily AQI Update',final);
-        console.log(\`Sent daily update to \${du.email}\`);
+        console.log(`Sent daily update to ${du.email}`);
       }
     }
   }catch(e){
