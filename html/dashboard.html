@@ -241,7 +241,7 @@
   loadAddresses();
   loadReport();
 
-  // Debug popup for details
+  // Debug popup for details (same as before)
   function showDetailPopup(html, event) {
     const popup = document.getElementById('detailPopup');
     popup.innerHTML = html + `<p><button onclick="hideDetailPopup()">Close</button></p>`;
@@ -258,7 +258,7 @@
   }
 
   // Map popup for "[view on map]" links.
-  // Calls our server-side proxy at /api/getMapUrl.
+  // This function uses our server-side proxy at /api/getMapUrl.
   function showMapPopup(source, adrEncoded, dataEncoded) {
     console.log("Launching map popup for", source);
     const adr = JSON.parse(decodeURIComponent(adrEncoded));
@@ -269,6 +269,7 @@
     const popup = document.getElementById('detailPopup');
     popup.innerHTML = '<p>Loading map...</p>';
     popup.style.display = 'block';
+    popup.style.position = 'fixed';
     popup.style.left = '50%';
     popup.style.top = '50%';
     popup.style.transform = 'translate(-50%, -50%)';
@@ -293,7 +294,6 @@
       });
   }
 </script>
-
 <script src="/js/autocomplete.js"></script>
 </body>
 </html>
