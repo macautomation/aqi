@@ -21,6 +21,9 @@
       padding:10px;
       z-index:9999;
       max-width:300px;
+      /* Optional: so if content gets large, it can scroll */
+      overflow-y: auto;
+      max-height: 80vh;
     }
     #detailPopup h3 { margin-top:0; }
   </style>
@@ -110,7 +113,7 @@
         return null;
       }
       const txt = await resp.text();
-      throw new Error(`HTTP ${resp.status} - ${txt}`);
+      throw new Error(\`HTTP \${resp.status} - \${txt}\`);
     }
     return resp.json();
   }
@@ -137,12 +140,12 @@
       } else {
         let html = '<ul>';
         for (const a of arr) {
-          html += `<li>${a.address} ${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
+          html += \`<li>\${a.address} \${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
             <form method="post" action="/api/delete-address" style="display:inline;">
-              <input type="hidden" name="addressId" value="${a.id}">
+              <input type="hidden" name="addressId" value="\${a.id}">
               <button type="submit" style="margin-left:10px;">Delete</button>
             </form>
-          </li>`;
+          </li>\`;
         }
         html += '</ul>';
         addressesList.innerHTML = html;
@@ -220,10 +223,12 @@
     const nextHour = new Date(now);
     nextHour.setHours(now.getHours() + 1, 0, 0, 0);
     const hourlyMs = nextHour - now;
+
     const nextDaily = new Date(now);
     nextDaily.setHours(8, 0, 0, 0);
     if (nextDaily <= now) nextDaily.setDate(nextDaily.getDate() + 1);
     const dailyMs = nextDaily - now;
+
     document.getElementById('hourlyCountdown').innerText = formatMs(hourlyMs);
     document.getElementById('dailyCountdown').innerText = formatMs(dailyMs);
   }
@@ -232,7 +237,7 @@
     const hh = Math.floor(s / 3600);
     const mm = Math.floor((s % 3600) / 60);
     const ss = s % 60;
-    return `${hh}h ${mm}m ${ss}s`;
+    return \`\${hh}h \${mm}m \${ss}s\`;
   }
   setInterval(updateCountdowns, 1000);
   updateCountdowns();
@@ -241,13 +246,13 @@
   loadAddresses();
   loadReport();
 
-  // Debug popup for details (same as before)
+  // Debug popup for details
   function showDetailPopup(html, event) {
     const popup = document.getElementById('detailPopup');
-    popup.innerHTML = html + `<p><button onclick="hideDetailPopup()">Close</button></p>`;
+    popup.innerHTML = html + \`<p><button onclick="hideDetailPopup()">Close</button></p>\`;
     popup.style.display = 'block';
-    const x = event.pageX + 10;
-    const y = event.pageY + 10;
+    const x = event ? event.pageX + 10 : 100;
+    const y = event ? event.pageY + 10 : 100;
     popup.style.left = x + 'px';
     popup.style.top = y + 'px';
   }
@@ -257,40 +262,38 @@
     popup.innerHTML = '';
   }
 
-  // Map popup for "[view on map]" links.
-  // This function uses our server-side proxy at /api/getMapUrl.
+  // Map popup (similar logic, but center on screen)
   function showMapPopup(source, adrEncoded, dataEncoded) {
-    console.log("Launching map popup for", source);
-    const adr = JSON.parse(decodeURIComponent(adrEncoded));
-    const data = JSON.parse(decodeURIComponent(dataEncoded));
-    const lat = adr.lat;
-    const lon = adr.lon;
-    const dataParam = encodeURIComponent(JSON.stringify(data));
     const popup = document.getElementById('detailPopup');
-    popup.innerHTML = '<p>Loading map...</p>';
     popup.style.display = 'block';
     popup.style.position = 'fixed';
     popup.style.left = '50%';
     popup.style.top = '50%';
     popup.style.transform = 'translate(-50%, -50%)';
-    
-    fetch(`/api/getMapUrl?source=${source}&lat=${lat}&lon=${lon}&data=${dataParam}`)
+    popup.innerHTML = '<p>Loading map...</p><p><button onclick="hideDetailPopup()">Close</button></p>';
+
+    const adr = JSON.parse(decodeURIComponent(adrEncoded));
+    const data = JSON.parse(decodeURIComponent(dataEncoded));
+    const lat = adr.lat;
+    const lon = adr.lon;
+    const dataParam = encodeURIComponent(JSON.stringify(data));
+
+    fetch(\`/api/getMapUrl?source=\${source}&lat=\${lat}&lon=\${lon}&data=\${dataParam}\`)
       .then(response => response.json())
       .then(result => {
-        console.log("Map URL result:", result);
         if (result.url) {
+          popup.innerHTML = \`<p><button onclick="hideDetailPopup()">Close</button></p>\`;
           const img = document.createElement('img');
           img.src = result.url;
           img.style.maxWidth = '100%';
-          popup.innerHTML = '';
           popup.appendChild(img);
         } else {
-          popup.innerHTML = '<p>Error loading map.</p>';
+          popup.innerHTML = '<p>Error loading map.</p><p><button onclick="hideDetailPopup()">Close</button></p>';
         }
       })
       .catch(err => {
         console.error(err);
-        popup.innerHTML = '<p>Error loading map.</p>';
+        popup.innerHTML = '<p>Error loading map.</p><p><button onclick="hideDetailPopup()">Close</button></p>';
       });
   }
 </script>
