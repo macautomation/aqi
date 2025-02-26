@@ -304,29 +304,28 @@ function generateGoogleMapsUrlForPurpleAir(adr, pa) {
 function generateGoogleMapsUrlForOpenWeather(adr, ow) {
   const key = process.env.GOOGLE_MAPS_API_KEY || '';
   let markers = [];
-  // User home marker
+  // User home marker (blue H)
   markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
   
-  // Use wind data from ow.data_json
+  // Wind marker(s): use current wind data
   const windSpeed = (ow.data_json && ow.data_json.windSpeed) ? ow.data_json.windSpeed : 0;
   const windDeg = (ow.data_json && ow.data_json.windDeg) ? ow.data_json.windDeg : 0;
   const windIconUrl = getWindMarkerUrl(windDeg, windSpeed);
-  const offset = 0.005; // approx 0.3 miles
+  const offset = 0.005; // offset for markers
   markers.push(`markers=${encodeURIComponent(`icon:${windIconUrl}|${adr.lat + offset},${adr.lon}`)}`);
   markers.push(`markers=${encodeURIComponent(`icon:${windIconUrl}|${adr.lat},${adr.lon + offset}`)}`);
   markers.push(`markers=${encodeURIComponent(`icon:${windIconUrl}|${adr.lat - offset},${adr.lon}`)}`);
   
-  // Temperature marker: show temperature in bottom right corner.
+  // Remove or comment out the temperature marker:
   const tempF = (ow.data_json && ow.data_json.tempF) ? ow.data_json.tempF : 0;
   markers.push(`markers=${encodeURIComponent(`color:purple|label:T:${tempF}|${adr.lat - 0.01},${adr.lon + 0.01}`)}`);
   
-  // Fixed visible area around user.
   const visibleParam = `${adr.lat - 0.03},${adr.lon - 0.03}|${adr.lat + 0.03},${adr.lon + 0.03}`;
-  
   const markerParams = markers.join('&');
-  // Increase map size to 600x600.
+  // Map size increased to 600x600
   return `https://maps.googleapis.com/maps/api/staticmap?size=600x600&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
 }
+
 
 function getCustomMarkerUrl(aqi, color) {
   // Uses Google Chart API to generate a marker icon with the AQI as text.
@@ -335,6 +334,7 @@ function getCustomMarkerUrl(aqi, color) {
 
 function getWindMarkerUrl(windDeg, windSpeed) {
   const arrow = getWindArrow(windDeg);
+  // Generate a marker icon using Google Chart API with an arrow and wind speed
   return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${arrow}${windSpeed}|FFA500|000000`;
 }
 
@@ -818,9 +818,8 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
     };
 
     const hourStr = new Date().toISOString().slice(0, 13);
-    const url = 'https://www.airnowapi.org/aq/data/';
     try {
-      const resp = await axios.get(url, {
+      const resp = await axios.get('https://www.airnowapi.org/aq/data/', {
         params: {
           startDate: hourStr,
           endDate: hourStr,
@@ -838,10 +837,8 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
         finalResult.debug.tries.push(debugInfo);
         radiusMiles *= 2;
       } else {
-        let sum = 0;
-        let count = 0;
-        let closestDist = Infinity;
-        let closestVal = 0;
+        let sum = 0, count = 0;
+        let closestDist = Infinity, closestVal = 0;
         let sensorDetails = [];
 
         for (const s of resp.data) {
@@ -871,7 +868,7 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
           finalResult.average = avg;
           finalResult.debug.tries.push(debugInfo);
           foundSensors = true;
-          finalResult.debug.nearestDistance = closestDist;
+          finalResult.debug.nearestDistance = closestDist; // set nearestDistance here
         }
       }
     } catch (e) {
@@ -884,7 +881,6 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
   console.log('AirNow debug info:', JSON.stringify(finalResult.debug, null, 2));
   return finalResult;
 }
-
 
 async function fetchOpenWeather(lat,lon){
   const debugInfo={lat,lon};
@@ -917,6 +913,27 @@ async function fetchOpenWeather(lat,lon){
   }
 }
 
+async function getOpenWeather24hrAverages(addressId) {
+  const since = new Date(Date.now() - 24 * 3600 * 1000);
+  const res = await query(`
+    SELECT AVG((data_json->>'tempF')::numeric) as avgTemp,
+           AVG((data_json->>'windSpeed')::numeric) as avgWindSpeed,
+           AVG((data_json->>'windDeg')::numeric) as avgWindDeg
+    FROM address_hourly_data
+    WHERE address_id=$1 AND source='OpenWeather' AND timestamp >= $2
+  `, [addressId, since]);
+  if (!res.rows.length) return null;
+  const avgTemp = res.rows[0].avgtemp || 0;
+  const avgWindSpeed = res.rows[0].avgwindspeed || 0;
+  const avgWindDeg = res.rows[0].avgwinddeg || 0;
+  return {
+    avgTemp,
+    avgWindSpeed,
+    avgWindDeg,
+    windCardinal: getCardinal(avgWindDeg)
+  };
+}
+
 async function earliestTimestampForAddress(addressId, source) {
   let queryText, params;
   if (source === 'AirNow' || source === 'PurpleAir') {
@@ -942,10 +959,10 @@ async function earliestTimestampForAddress(addressId, source) {
   return new Date(res.rows[0].mint);
 }
 
-function format24hrAvailable(earliest){
-  if(!earliest)return 'No data yet';
-  const d=new Date(earliest.getTime()+24*3600*1000);
-  return formatDayTimeForUser(d);
+function format24hrAvailable(earliest) {
+  if (!earliest) return 'No data yet';
+  const availableTime = new Date(earliest.getTime() + 24 * 3600 * 1000);
+  return availableTime.toLocaleString();
 }
 
 async function updateTrailing24hAverages(userId, addressId, timestamp, source) {
@@ -1143,6 +1160,10 @@ async function buildDailyEmail(userId) {
     if (!adr.lat || !adr.lon) {
       lines.push(`Address: ${adr.address}<br>(No lat/lon)`);
       continue;
+    }
+    const owAvg = await getOpenWeather24hrAverages(adr.id);
+    if (owAvg) {
+      lines.push(`OpenWeather 24hr Avg: Temp=${Math.round(owAvg.avgTemp)}°F, Wind=${Math.round(owAvg.avgWindSpeed)} mph (${owAvg.windCardinal} ${Math.round(owAvg.avgWindDeg)}°)`);
     }
     lines.push(`<h4>Address: ${adr.address}</h4>`);
     
