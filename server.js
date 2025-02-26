@@ -252,10 +252,7 @@ function getWindArrow(deg) {
 function generateGoogleMapsUrlForAirNow(adr, an) {
   const key = process.env.GOOGLE_MAPS_API_KEY || '';
   let markers = [];
-  // User home marker (blue with label "H")
   markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
-  
-  // Determine visible area from the last API attempt’s bounding box if available.
   let visibleParam = `${adr.lat},${adr.lon}`;
   if (an.data_json && an.data_json.debug && an.data_json.debug.tries && an.data_json.debug.tries.length) {
     const lastTry = an.data_json.debug.tries[an.data_json.debug.tries.length - 1];
@@ -264,18 +261,14 @@ function generateGoogleMapsUrlForAirNow(adr, an) {
       visibleParam = `${bb.minLat},${bb.minLon}|${bb.maxLat},${bb.maxLon}`;
     }
   }
-  
-  // Add sensor markers using custom icons so the marker displays the AQI number.
   if (an.data_json && an.data_json.debug && an.data_json.debug.sensors && an.data_json.debug.sensors.length) {
     an.data_json.debug.sensors.forEach(sensor => {
-      const iconUrl = getCustomMarkerUrl(sensor.aqi, 'FF0000'); // red marker
+      const iconUrl = getCustomMarkerUrl(sensor.aqi, 'FF0000');
       markers.push(`markers=${encodeURIComponent(`icon:${iconUrl}|${sensor.lat},${sensor.lon}`)}`);
     });
   }
-  
   const markerParams = markers.join('&');
-  const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
-  return url;
+  return `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
 }
 
 // Generate a Google Static Maps URL for PurpleAir
@@ -311,35 +304,41 @@ function generateGoogleMapsUrlForPurpleAir(adr, pa) {
 function generateGoogleMapsUrlForOpenWeather(adr, ow) {
   const key = process.env.GOOGLE_MAPS_API_KEY || '';
   let markers = [];
-  // User home marker
-  markers.push(`color:blue|label:H|${adr.lat},${adr.lon}`);
+  // User home marker (using default style)
+  markers.push(`markers=${encodeURIComponent(`color:blue|label:H|${adr.lat},${adr.lon}`)}`);
   
-  // Wind marker(s): use the wind speed and direction from OpenWeather data
+  // Use wind data from ow.data_json
   const windSpeed = (ow.data_json && ow.data_json.windSpeed) ? ow.data_json.windSpeed : 0;
   const windDeg = (ow.data_json && ow.data_json.windDeg) ? ow.data_json.windDeg : 0;
-  const arrow = getWindArrow(windDeg);
-  const windLabel = `${arrow}${windSpeed}`;
-  // Place three wind markers with slight offsets around the user's location
-  const offset = 0.005; // about 0.3 miles
-  markers.push(`color:orange|label:${windLabel}|${adr.lat + offset},${adr.lon}`);
-  markers.push(`color:orange|label:${windLabel}|${adr.lat},${adr.lon + offset}`);
-  markers.push(`color:orange|label:${windLabel}|${adr.lat - offset},${adr.lon}`);
+  const windIconUrl = getWindMarkerUrl(windDeg, windSpeed);
+  // Place one wind marker (centered on the user) using the custom icon.
+  markers.push(`markers=${encodeURIComponent(`icon:${windIconUrl}|${adr.lat},${adr.lon}`)}`);
   
-  // Temperature marker: show temperature in bottom right corner (using an offset from user)
+  // Optionally, you could add additional wind markers if desired.
+  
+  // Temperature marker: show temperature in bottom right corner.
   const tempF = (ow.data_json && ow.data_json.tempF) ? ow.data_json.tempF : 0;
-  markers.push(`color:purple|label:T:${tempF}|${adr.lat - 0.01},${adr.lon + 0.01}`);
+  markers.push(`markers=${encodeURIComponent(`color:purple|label:T:${tempF}|${adr.lat - 0.01},${adr.lon + 0.01}`)}`);
   
-  // For OpenWeather, we use a fixed visible area around the user
-  const visibleParam = `${adr.lat - 0.02},${adr.lon - 0.02}|${adr.lat + 0.02},${adr.lon + 0.02}`;
+  // For OpenWeather, use a fixed visible area around the user.
+  const visibleParam = `${adr.lat - 0.03},${adr.lon - 0.03}|${adr.lat + 0.03},${adr.lon + 0.03}`;
   
-  const markerParams = markers.map(m => `markers=${encodeURIComponent(m)}`).join('&');
-  const url = `https://maps.googleapis.com/maps/api/staticmap?size=400x400&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
+  const markerParams = markers.join('&');
+  // Increase the map size to 600x600 as requested.
+  const url = `https://maps.googleapis.com/maps/api/staticmap?size=600x600&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
   return url;
 }
 
 function getCustomMarkerUrl(aqi, color) {
   // Uses Google Chart API to generate a marker icon with the AQI as text.
   return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${aqi}|${color}|FFFFFF`;
+}
+
+function getWindMarkerUrl(windDeg, windSpeed) {
+  // Use getWindArrow to get an arrow symbol
+  const arrow = getWindArrow(windDeg);
+  // Use the Google Chart API to generate a custom marker with the arrow and wind speed
+  return `https://chart.googleapis.com/chart?chst=d_map_pin_letter&chld=${arrow}${windSpeed}|FFA500|000000`;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -804,6 +803,7 @@ async function fetchAirNowAQI(lat, lon, initialMiles) {
       approach: 'autoExpand',
       lat,
       lon,
+      nearestDistance,
       tries: []
     }
   };
@@ -922,25 +922,43 @@ async function fetchOpenWeather(lat,lon){
   }
 }
 
-async function earliestTimestampForAddress(addressId,source){
-  const res=await query(`
-    SELECT MIN(timestamp) as mint
-    FROM address_hourly_data
-    WHERE address_id=$1
-      AND source=$2
-  `,[addressId,source]);
-  if(!res.rows.length||!res.rows[0].mint)return null;
+async function earliestTimestampForAddress(addressId, source) {
+  let queryText, params;
+  if (source === 'AirNow' || source === 'PurpleAir') {
+    queryText = `
+      SELECT MIN(timestamp) as mint
+      FROM address_hourly_data
+      WHERE address_id=$1
+        AND source=$2
+        AND aqi_closest > 0
+    `;
+    params = [addressId, source];
+  } else {
+    queryText = `
+      SELECT MIN(timestamp) as mint
+      FROM address_hourly_data
+      WHERE address_id=$1
+        AND source=$2
+    `;
+    params = [addressId, source];
+  }
+  const res = await query(queryText, params);
+  if (!res.rows.length || !res.rows[0].mint) return null;
   return new Date(res.rows[0].mint);
 }
+
 function format24hrAvailable(earliest){
   if(!earliest)return 'No data yet';
   const d=new Date(earliest.getTime()+24*3600*1000);
   return formatDayTimeForUser(d);
 }
-async function updateTrailing24hAverages(userId, addressId, timestamp, source) {
-  const dayAgo = new Date(timestamp);
-  dayAgo.setHours(dayAgo.getHours() - 24);
 
+async function updateTrailing24hAverages(userId, addressId, timestamp, source) {
+  // Only consider entries with aqi_closest > 0 for AirNow and PurpleAir
+  let condition = "";
+  if (source === 'AirNow' || source === 'PurpleAir') {
+    condition = "AND aqi_closest > 0";
+  }
   const rows = await query(`
     SELECT AVG(aqi_closest) as cAvg,
            AVG(aqi_average) as rAvg,
@@ -950,7 +968,8 @@ async function updateTrailing24hAverages(userId, addressId, timestamp, source) {
       AND address_id=$2
       AND source=$3
       AND timestamp >= $4
-  `,[userId, addressId, source, dayAgo]);
+      ${condition}
+  `, [userId, addressId, source, new Date(timestamp.getTime() - 24 * 3600 * 1000)]);
   
   if (!rows.rows.length) return;
   
@@ -964,7 +983,7 @@ async function updateTrailing24hAverages(userId, addressId, timestamp, source) {
       AND address_id=$2
       AND source=$3
       AND timestamp=$4
-  `,[userId, addressId, source, timestamp]);
+  `, [userId, addressId, source, timestamp]);
   if (!newRow.rows.length) return;
 
   let dbRow = newRow.rows[0];
@@ -973,26 +992,24 @@ async function updateTrailing24hAverages(userId, addressId, timestamp, source) {
   if (count >= 24) {
     d.closest24hrAvg = c24;
     d.radius24hrAvg = r24;
-
-   // Also store them in the new columns
-   await query(`
-     UPDATE address_hourly_data
-     SET data_json=$1,
-         closest_24hr_avg=$2,
-         radius_24hr_avg=$3
-     WHERE id=$4
-   `,[d, c24, r24, dbRow.id]);
+    await query(`
+      UPDATE address_hourly_data
+      SET data_json=$1,
+          closest_24hr_avg=$2,
+          radius_24hr_avg=$3
+      WHERE id=$4
+    `, [d, c24, r24, dbRow.id]);
   } else {
-    // If < 24, we might just update data_json but set columns to null
-   await query(`
-     UPDATE address_hourly_data
-     SET data_json=$1,
-         closest_24hr_avg=NULL,
-         radius_24hr_avg=NULL
-     WHERE id=$2
-   `,[d, dbRow.id]);
+    await query(`
+      UPDATE address_hourly_data
+      SET data_json=$1,
+          closest_24hr_avg=NULL,
+          radius_24hr_avg=NULL
+      WHERE id=$2
+    `, [d, dbRow.id]);
   }
 }
+
 async function fetchAndStoreHourlyDataForUser(userId){
   const userRes=await query('SELECT aqi_radius FROM users WHERE id=$1',[userId]);
   if(!userRes.rows.length)return;
@@ -1099,93 +1116,101 @@ cron.schedule('0 * * * *', async()=>{
 cron.schedule('*/15 * * * *', async()=>{
   console.log('[CRON] daily check');
   try{
-    const now=new Date();
-    const hour=now.getHours();
-    const minute=now.getMinutes();
-    const block=Math.floor(minute/15)*15;
-    const {rows:dueUsers}=await query(`
+    const now = new Date();
+    // Use UTC hours/minutes (adjust if needed)
+    const hour = now.getUTCHours();
+    const minute = now.getUTCMinutes();
+    const block = Math.floor(minute / 15) * 15;
+    const {rows:dueUsers} = await query(`
       SELECT id,email
       FROM users
       WHERE daily_report_hour=$1
         AND daily_report_minute=$2
-    `,[hour,block]);
+    `, [hour, block]);
     for(const du of dueUsers){
       await fetchAndStoreHourlyDataForUser(du.id);
-      const final=await buildDailyEmail(du.id);
+      const final = await buildDailyEmail(du.id);
       if(final){
         await sendEmail(du.email,'Your Daily AQI Update',final);
         console.log(`Sent daily update to ${du.email}`);
       }
     }
   }catch(e){
-    console.error('[CRON daily check]',e);
+    console.error('[CRON daily check]', e);
   }
 });
-async function buildDailyEmail(userId){
-  const addrRes=await query('SELECT * FROM user_addresses WHERE user_id=$1',[userId]);
-  if(!addrRes.rows.length)return null;
-  let lines=[];
-  for(const adr of addrRes.rows){
-    if(!adr.lat||!adr.lon){
-      lines.push(`Address: ${adr.address}\n(No lat/lon)`);
+
+async function buildDailyEmail(userId) {
+  const addrRes = await query('SELECT * FROM user_addresses WHERE user_id=$1', [userId]);
+  if (!addrRes.rows.length) return null;
+  let lines = [];
+  for (const adr of addrRes.rows) {
+    if (!adr.lat || !adr.lon) {
+      lines.push(`Address: ${adr.address}<br>(No lat/lon)`);
       continue;
     }
-    lines.push(`Address: ${adr.address}`);
-
-    const an = await latestSourceRow(adr.id,'AirNow');
+    lines.push(`<h4>Address: ${adr.address}</h4>`);
+    
+    // AirNow section
+    const an = await latestSourceRow(adr.id, 'AirNow');
     if (an) {
       let c = an.aqi_closest || 0;
       let r = an.aqi_average || 0;
-
-     let c24 = an.closest_24hr_avg; 
-     let r24 = an.radius_24hr_avg;
+      let c24 = an.closest_24hr_avg;
+      let r24 = an.radius_24hr_avg;
       if (c24 == null) {
-        const earliest = await earliestTimestampForAddress(adr.id,'AirNow');
-        c24 = `Available at ${format24hrAvailable(earliest)}`;
+        const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
+        c24 = `Available at ${formatDayTimeForUser(new Date(earliest.getTime() + 24 * 3600 * 1000))}`;
       }
       if (r24 == null) {
-        const earliest = await earliestTimestampForAddress(adr.id,'AirNow');
-        r24 = `Available at ${format24hrAvailable(earliest)}`;
+        const earliest = await earliestTimestampForAddress(adr.id, 'AirNow');
+        r24 = `Available at ${formatDayTimeForUser(new Date(earliest.getTime() + 24 * 3600 * 1000))}`;
       }
-      lines.push(` AirNow => ClosestAQI=${c}, RadiusAvg=${r}, 24hrClosestAvg=${c24}, 24hrRadiusAvg=${r24}`);
+      // Generate map URL using the server-side function:
+      const mapUrlAir = generateGoogleMapsUrlForAirNow({ lat: adr.lat, lon: adr.lon }, an);
+      lines.push(`AirNow: Closest AQI=${c} (Nearest sensor: ${an.debug.nearestDistance ? an.debug.nearestDistance.toFixed(1) + ' miles' : 'N/A'}), Radius Avg=${r}, 24hr Closest Avg=${c24}, 24hr Radius Avg=${r24}<br>
+      <img src="${mapUrlAir}" alt="AirNow Map" style="max-width:100%;">`);
     } else {
-      lines.push(` AirNow => No data`);
+      lines.push(`AirNow: No data`);
     }
-
-    const pa = await latestSourceRow(adr.id,'PurpleAir');
+    
+    // PurpleAir section
+    const pa = await latestSourceRow(adr.id, 'PurpleAir');
     if (pa) {
       let c = pa.aqi_closest || 0;
       let r = pa.aqi_average || 0;
-
-     let c24 = pa.closest_24hr_avg; 
-     let r24 = pa.radius_24hr_avg;
+      let c24 = pa.closest_24hr_avg;
+      let r24 = pa.radius_24hr_avg;
       if (c24 == null) {
-        const earliest = await earliestTimestampForAddress(adr.id,'PurpleAir');
-        c24 = `Available at ${format24hrAvailable(earliest)}`;
+        const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
+        c24 = `Available at ${formatDayTimeForUser(new Date(earliest.getTime() + 24 * 3600 * 1000))}`;
       }
       if (r24 == null) {
-        const earliest = await earliestTimestampForAddress(adr.id,'PurpleAir');
-        r24 = `Available at ${format24hrAvailable(earliest)}`;
+        const earliest = await earliestTimestampForAddress(adr.id, 'PurpleAir');
+        r24 = `Available at ${formatDayTimeForUser(new Date(earliest.getTime() + 24 * 3600 * 1000))}`;
       }
-      lines.push(` PurpleAir => ClosestAQI=${c}, RadiusAvg=${r}, 24hrClosestAvg=${c24}, 24hrRadiusAvg=${r24}`);
+      const mapUrlPa = generateGoogleMapsUrlForPurpleAir({ lat: adr.lat, lon: adr.lon }, pa);
+      lines.push(`PurpleAir: Closest AQI=${c}, Radius Avg=${r}, 24hr Closest Avg=${c24}, 24hr Radius Avg=${r24}<br>
+      <img src="${mapUrlPa}" alt="PurpleAir Map" style="max-width:100%;">`);
     } else {
-      lines.push(` PurpleAir => No data`);
+      lines.push(`PurpleAir: No data`);
     }
-
-    const ow=await latestSourceRow(adr.id,'OpenWeather');
-    if(ow){
-      const d=ow.data_json||{};
-      let c24=d.ow24hrTemp;
-      if(c24===undefined){
-        const earliest=await earliestTimestampForAddress(adr.id,'OpenWeather');
-        c24=`Available at ${format24hrAvailable(earliest)}`;
-      }
-      lines.push(` OpenWeather => Now: Temp=${d.tempF||0}F, Wind=${d.windSpeed||0} mph, 24hrAvgTemp=${c24}`);
+    
+    // OpenWeather section
+    const ow = await latestSourceRow(adr.id, 'OpenWeather');
+    if (ow) {
+      const d = ow.data_json || {};
+      let c24 = (d.ow24hrTemp !== undefined)
+        ? d.ow24hrTemp
+        : `Available at ${formatDayTimeForUser(new Date((await earliestTimestampForAddress(adr.id, 'OpenWeather')).getTime() + 24*3600*1000))}`;
+      const mapUrlOw = generateGoogleMapsUrlForOpenWeather({ lat: adr.lat, lon: adr.lon }, ow);
+      lines.push(`OpenWeather: Now: Temp=${d.tempF || 0}°F, Wind=${d.windSpeed || 0} mph (${d.windDir || 'N/A'} at ${d.windDeg || 0}°), 24hr Avg Temp=${c24}<br>
+      <img src="${mapUrlOw}" alt="OpenWeather Map" style="max-width:100%;">`);
     } else {
-      lines.push(` OpenWeather => No data`);
+      lines.push(`OpenWeather: No data`);
     }
   }
-  return lines.join('\n');
+  return lines.join('<br><br>');
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1323,6 +1348,13 @@ app.post('/api/set-aqi-radius', ensureAuth, async(req,res)=>{
   if(!radius)return res.status(400).json({error:'No radius'});
   await query('UPDATE users SET aqi_radius=$1 WHERE id=$2',[parseInt(radius,10),req.user.id]);
   res.json({success:true});
+});
+
+// log out
+app.get('/logout', (req, res) => {
+  req.logout(() => {
+    res.redirect('/html/login.html');
+  });
 });
 
 // set-daily-time
