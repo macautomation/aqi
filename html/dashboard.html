@@ -101,9 +101,6 @@
 <div id="detailPopup"></div>
 
 <script>
-  // Note: We are not exposing the Google Maps API key on the client.
-  // Instead, a server-side proxy at /api/getMapUrl will generate map URLs.
-
   async function fetchJSON(url, opts) {
     const resp = await fetch(url, opts);
     if (!resp.ok) {
@@ -186,7 +183,7 @@
     }
   }
 
-  // Event listeners for forms
+  // Form event listeners
   document.getElementById('aqiRadiusForm').addEventListener('submit', async e => {
     e.preventDefault();
     const val = document.getElementById('aqiRadiusSelect').value;
@@ -261,17 +258,23 @@
   }
 
   // Map popup for "[view on map]" links.
-  // This function calls our server proxy endpoint /api/getMapUrl
-  function showMapPopupForSource(source, lat, lon, dataEncoded) {
+  // Calls our server-side proxy at /api/getMapUrl.
+  function showMapPopup(source, adrEncoded, dataEncoded) {
+    const adr = JSON.parse(decodeURIComponent(adrEncoded));
+    const data = JSON.parse(decodeURIComponent(dataEncoded));
+    // For security, we call our proxy endpoint so the API key is never exposed.
+    const lat = adr.lat;
+    const lon = adr.lon;
+    // Encode the data object as a URI component.
+    const dataParam = encodeURIComponent(JSON.stringify(data));
     const popup = document.getElementById('detailPopup');
     popup.innerHTML = '<p>Loading map...</p>';
     popup.style.display = 'block';
-    // Center the popup in the viewport:
     popup.style.left = '50%';
     popup.style.top = '50%';
     popup.style.transform = 'translate(-50%, -50%)';
     
-    fetch(`/api/getMapUrl?source=${source}&lat=${lat}&lon=${lon}&data=${dataEncoded}`)
+    fetch(`/api/getMapUrl?source=${source}&lat=${lat}&lon=${lon}&data=${dataParam}`)
       .then(response => response.json())
       .then(result => {
         if (result.url) {
