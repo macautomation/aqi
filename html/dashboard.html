@@ -251,8 +251,13 @@
     const popup = document.getElementById('detailPopup');
     popup.innerHTML = html + \`<p><button onclick="hideDetailPopup()">Close</button></p>\`;
     popup.style.display = 'block';
-    const x = event ? event.pageX + 10 : 100;
-    const y = event ? event.pageY + 10 : 100;
+
+    // If event is provided, position near cursor
+    let x = 100, y = 100;
+    if (event) {
+      x = event.pageX + 10;
+      y = event.pageY + 10;
+    }
     popup.style.left = x + 'px';
     popup.style.top = y + 'px';
   }
@@ -262,14 +267,20 @@
     popup.innerHTML = '';
   }
 
-  // Map popup (similar logic, but center on screen)
-  function showMapPopup(source, adrEncoded, dataEncoded) {
+  // Map popup: use same approach to anchor near the click
+  function showMapPopup(source, adrEncoded, dataEncoded, event) {
     const popup = document.getElementById('detailPopup');
     popup.style.display = 'block';
-    popup.style.position = 'fixed';
-    popup.style.left = '50%';
-    popup.style.top = '50%';
-    popup.style.transform = 'translate(-50%, -50%)';
+    popup.style.position = 'absolute';
+
+    let x = 100, y = 100;
+    if (event) {
+      x = event.pageX + 10;
+      y = event.pageY + 10;
+    }
+    popup.style.left = x + 'px';
+    popup.style.top = y + 'px';
+
     popup.innerHTML = '<p>Loading map...</p><p><button onclick="hideDetailPopup()">Close</button></p>';
 
     const adr = JSON.parse(decodeURIComponent(adrEncoded));
@@ -282,6 +293,7 @@
       .then(response => response.json())
       .then(result => {
         if (result.url) {
+          // Replace content with the map image
           popup.innerHTML = \`<p><button onclick="hideDetailPopup()">Close</button></p>\`;
           const img = document.createElement('img');
           img.src = result.url;
