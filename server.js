@@ -383,6 +383,7 @@ function generateGoogleMapsUrlForOpenWeather(adr, ow) {
 
   // 800x800
   return `https://maps.googleapis.com/maps/api/staticmap?size=800x800&visible=${encodeURIComponent(visibleParam)}&${markerParams}&key=${key}`;
+  console.log("Using new openweather marker logic!", adr, ow);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
