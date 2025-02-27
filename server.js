@@ -1151,7 +1151,7 @@ async function buildDailyEmail(userId) {
       }
       let fbNote = '';
       if(an.isFallback) {
-        fbNote = `(Fallback from latest reading in UTC: ${formatDayTimeForUser(an.fallbackFromTimestamp)})`;
+        fbNote = `(Fallback from latest reading: ${formatDayTimeForUser(an.fallbackFromTimestamp)})`;
       }
       lines.push(`AirNow: Closest AQI=${c}, Radius Avg=${r}, c24=${c24}, r24=${r24} ${fbNote}`);
     } else {
@@ -1274,7 +1274,7 @@ async function buildAirNowSection(adr, an) {
         <td style="${r24Style}">${r24}</td>
       </tr>
       <tr>
-        <td>Nearest Sensor Distance</td>
+        <td>Nearest Sensor Dist.</td>
         <td>${nearestLine}</td>
       </tr>
       <tr>
@@ -1346,7 +1346,7 @@ async function buildPurpleAirSection(adr, pa) {
         <td style="${r24Style}">${r24}</td>
       </tr>
       <tr>
-        <td>Nearest Sensor Distance</td>
+        <td>Nearest Sensor Dist.</td>
         <td>${nearestLine}</td>
       </tr>
       <tr>
