@@ -113,7 +113,7 @@
         return null;
       }
       const txt = await resp.text();
-      throw new Error(\`HTTP \${resp.status} - \${txt}\`);
+      throw new Error(`HTTP ${resp.status} - ${txt}`);
     }
     return resp.json();
   }
