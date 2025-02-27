@@ -1689,36 +1689,36 @@ app.post('/api/reset', async(req,res)=>{
 });
 
 // delete-account
-app.post('/api/delete-account', ensureAuth, async(req,res)=>{
+app.post('/api/delete-account', ensureAuth, async (req, res) => {
   const userId = req.user.id;
   try {
-    const {rows} = await query('SELECT email FROM users WHERE id=$1',[userId]);
-    if(!rows.length){
-      return req.logout(()=> res.redirect('/index.html'));
+    const { rows } = await query('SELECT email FROM users WHERE id=$1', [userId]);
+    if (!rows.length) {
+      return req.logout(() => res.redirect('/index.html'));
     }
     const userEmail = rows[0].email;
-    await query('DELETE FROM address_hourly_data WHERE user_id=$1',[userId]);
-    await query('DELETE FROM user_addresses WHERE user_id=$1',[userId]);
-    await query('DELETE FROM users WHERE id=$1',[userId]);
+    await query('DELETE FROM address_hourly_data WHERE user_id=$1', [userId]);
+    await query('DELETE FROM user_addresses WHERE user_id=$1', [userId]);
+    await query('DELETE FROM users WHERE id=$1', [userId]);
 
-    req.logout(()=>{
+    req.logout(() => {
       sendEmail(
         userEmail,
         'Account Deleted',
         `Your account is deleted.\nNo more emails.\nIf you want to sign up again, please do so from the main site.`
-      ).catch(e=> console.error('[delete-account email]', e));
+      ).catch(e => console.error('[delete-account email]', e));
       res.redirect('/index.html');
     });
-  } catch(e){
+  } catch (e) {
     console.error('[delete-account error]', e);
     return res.status(500).send('Error deleting account');
   }
-}
+}); 
 
 // local login
 app.post('/api/login',
-  passport.authenticate('local',{failureRedirect:'/html/login.html'}),
-  (req,res)=> res.redirect('/html/dashboard.html')
+  passport.authenticate('local', { failureRedirect: '/html/login.html' }),
+  (req, res) => res.redirect('/html/dashboard.html')
 );
 
 // google oauth
