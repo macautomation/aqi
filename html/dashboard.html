@@ -46,13 +46,16 @@
     /* Popup for debug or map details */
     #detailPopup {
       display: none;
-      position: absolute;
+      position: fixed; /* We'll center it */
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
       background: #fff;
       border: 1px solid #333;
       padding: 10px;
       z-index: 9999;
-      max-width: 300px;
-      /* Optional: so if content gets large, it can scroll */
+      max-width: 800px;
+      /* If content gets large, it can scroll */
       overflow-y: auto;
       max-height: 80vh;
     }
@@ -332,16 +335,6 @@
     const popup = document.getElementById('detailPopup');
     popup.innerHTML = html + `<p><button onclick="hideDetailPopup()">Close</button></p>`;
     popup.style.display = 'block';
-
-    // If event is provided, position near cursor
-    let x = 100;
-    let y = 100;
-    if (event) {
-      x = event.pageX + 10;
-      y = event.pageY + 10;
-    }
-    popup.style.left = x + 'px';
-    popup.style.top = y + 'px';
   }
 
   function hideDetailPopup() {
@@ -351,21 +344,15 @@
   }
 
   // ==========================================================
-  // Map popup (similar approach)
+  // Map popup (centered in window)
   // ==========================================================
-  function showMapPopup(source, adrEncoded, dataEncoded, event) {
+  function showMapPopup(source, adrEncoded, dataEncoded) {
     const popup = document.getElementById('detailPopup');
     popup.style.display = 'block';
-    popup.style.position = 'absolute';
-
-    let x = 100;
-    let y = 100;
-    if (event) {
-      x = event.pageX + 10;
-      y = event.pageY + 10;
-    }
-    popup.style.left = x + 'px';
-    popup.style.top = y + 'px';
+    popup.style.position = 'fixed';
+    popup.style.left = '50%';
+    popup.style.top = '50%';
+    popup.style.transform = 'translate(-50%, -50%)';
 
     popup.innerHTML = '<p>Loading map...</p><p><button onclick="hideDetailPopup()">Close</button></p>';
 
@@ -383,6 +370,7 @@
           popup.innerHTML = `<p><button onclick="hideDetailPopup()">Close</button></p>`;
           const img = document.createElement('img');
           img.src = result.url;
+          // 2x bigger than before, we set size=800x800 at the server
           img.style.maxWidth = '100%';
           popup.appendChild(img);
         } else {
