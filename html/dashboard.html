@@ -3,29 +3,62 @@
 <head>
   <title>Dashboard</title>
   <style>
-    body { font-family: Arial, sans-serif; margin:20px; background: #f8f8f8; }
-    .container { max-width:600px; margin:0 auto; background:#fff; padding:20px; border-radius:4px; }
-    h1 { text-align:center; }
-    .logo { width:150px; display:block; margin:0 auto 10px; }
-    #addressesList ul { list-style:none; padding:0; }
-    #addressesList li { margin-bottom:5px; }
-    #reportArea { margin:10px 0; }
-    .loadingGif { width:50px; display:block; margin:10px auto; }
-    .btn { padding:10px; margin-top:10px; cursor:pointer; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f8f8f8;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 4px;
+    }
+    h1 {
+      text-align: center;
+    }
+    .logo {
+      width: 150px;
+      display: block;
+      margin: 0 auto 10px;
+    }
+    #addressesList ul {
+      list-style: none;
+      padding: 0;
+    }
+    #addressesList li {
+      margin-bottom: 5px;
+    }
+    #reportArea {
+      margin: 10px 0;
+    }
+    .loadingGif {
+      width: 50px;
+      display: block;
+      margin: 10px auto;
+    }
+    .btn {
+      padding: 10px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
     /* Popup for debug or map details */
     #detailPopup {
-      display:none;
-      position:absolute;
-      background:#fff;
-      border:1px solid #333;
-      padding:10px;
-      z-index:9999;
-      max-width:300px;
+      display: none;
+      position: absolute;
+      background: #fff;
+      border: 1px solid #333;
+      padding: 10px;
+      z-index: 9999;
+      max-width: 300px;
       /* Optional: so if content gets large, it can scroll */
       overflow-y: auto;
       max-height: 80vh;
     }
-    #detailPopup h3 { margin-top:0; }
+    #detailPopup h3 {
+      margin-top: 0;
+    }
   </style>
 </head>
 <body>
@@ -55,7 +88,14 @@
     <h3>Set Your Daily Report Time</h3>
     <form id="dailyTimeForm">
       <label for="dailyHour">Hour (0-23):</label>
-      <input type="number" id="dailyHour" min="0" max="23" value="8" style="width:60px;">
+      <input
+        type="number"
+        id="dailyHour"
+        min="0"
+        max="23"
+        value="8"
+        style="width:60px;"
+      >
       <label for="dailyMinute">Minute:</label>
       <select id="dailyMinute">
         <option value="0">00</option>
@@ -75,7 +115,12 @@
     <hr>
     <h3>Add a new address (up to 3)</h3>
     <form method="post" action="/api/add-address">
-      <input type="text" id="addressInput" name="address" placeholder="Address to report on">
+      <input
+        type="text"
+        id="addressInput"
+        name="address"
+        placeholder="Address to report on"
+      >
       <button type="submit">Add Address</button>
     </form>
   </div>
@@ -104,6 +149,9 @@
 <div id="detailPopup"></div>
 
 <script>
+  // ==========================================================
+  // Basic utility to fetch JSON from an API with error handling
+  // ==========================================================
   async function fetchJSON(url, opts) {
     const resp = await fetch(url, opts);
     if (!resp.ok) {
@@ -131,6 +179,9 @@
     loadingMsg.style.display = 'none';
   }
 
+  // ==========================================================
+  // Load addresses
+  // ==========================================================
   async function loadAddresses() {
     try {
       const arr = await fetchJSON('/api/list-addresses');
@@ -140,12 +191,15 @@
       } else {
         let html = '<ul>';
         for (const a of arr) {
-          html += \`<li>\${a.address} \${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
-            <form method="post" action="/api/delete-address" style="display:inline;">
-              <input type="hidden" name="addressId" value="\${a.id}">
-              <button type="submit" style="margin-left:10px;">Delete</button>
-            </form>
-          </li>\`;
+          html += `
+            <li>
+              ${a.address} ${a.lat && a.lon ? '(lat/lon ok)' : '(No lat/lon)'}
+              <form method="post" action="/api/delete-address" style="display:inline;">
+                <input type="hidden" name="addressId" value="${a.id}">
+                <button type="submit" style="margin-left:10px;">Delete</button>
+              </form>
+            </li>
+          `;
         }
         html += '</ul>';
         addressesList.innerHTML = html;
@@ -155,6 +209,9 @@
     }
   }
 
+  // ==========================================================
+  // Load report
+  // ==========================================================
   async function loadReport() {
     try {
       const data = await fetchJSON('/api/myReport');
@@ -169,6 +226,9 @@
     }
   }
 
+  // ==========================================================
+  // Trigger immediate "report now"
+  // ==========================================================
   async function updateNow() {
     showLoading();
     try {
@@ -186,7 +246,9 @@
     }
   }
 
-  // Form event listeners
+  // ==========================================================
+  // Save AQI radius
+  // ==========================================================
   document.getElementById('aqiRadiusForm').addEventListener('submit', async e => {
     e.preventDefault();
     const val = document.getElementById('aqiRadiusSelect').value;
@@ -202,6 +264,9 @@
     }
   });
 
+  // ==========================================================
+  // Save daily time
+  // ==========================================================
   document.getElementById('dailyTimeForm').addEventListener('submit', async e => {
     e.preventDefault();
     const hour = document.getElementById('dailyHour').value;
@@ -218,6 +283,9 @@
     }
   });
 
+  // ==========================================================
+  // Update countdown timers
+  // ==========================================================
   function updateCountdowns() {
     const now = new Date();
     const nextHour = new Date(now);
@@ -226,34 +294,48 @@
 
     const nextDaily = new Date(now);
     nextDaily.setHours(8, 0, 0, 0);
-    if (nextDaily <= now) nextDaily.setDate(nextDaily.getDate() + 1);
+    if (nextDaily <= now) {
+      nextDaily.setDate(nextDaily.getDate() + 1);
+    }
     const dailyMs = nextDaily - now;
 
     document.getElementById('hourlyCountdown').innerText = formatMs(hourlyMs);
     document.getElementById('dailyCountdown').innerText = formatMs(dailyMs);
   }
+
   function formatMs(ms) {
     const s = Math.floor(ms / 1000);
     const hh = Math.floor(s / 3600);
     const mm = Math.floor((s % 3600) / 60);
     const ss = s % 60;
-    return \`\${hh}h \${mm}m \${ss}s\`;
+    return `${hh}h ${mm}m ${ss}s`;
   }
+
   setInterval(updateCountdowns, 1000);
   updateCountdowns();
 
+  // ==========================================================
+  // Hook up the "Update now" button
+  // ==========================================================
   updateBtn.addEventListener('click', updateNow);
+
+  // ==========================================================
+  // Initial load
+  // ==========================================================
   loadAddresses();
   loadReport();
 
+  // ==========================================================
   // Debug popup for details
+  // ==========================================================
   function showDetailPopup(html, event) {
     const popup = document.getElementById('detailPopup');
-    popup.innerHTML = html + \`<p><button onclick="hideDetailPopup()">Close</button></p>\`;
+    popup.innerHTML = html + `<p><button onclick="hideDetailPopup()">Close</button></p>`;
     popup.style.display = 'block';
 
     // If event is provided, position near cursor
-    let x = 100, y = 100;
+    let x = 100;
+    let y = 100;
     if (event) {
       x = event.pageX + 10;
       y = event.pageY + 10;
@@ -261,19 +343,23 @@
     popup.style.left = x + 'px';
     popup.style.top = y + 'px';
   }
+
   function hideDetailPopup() {
     const popup = document.getElementById('detailPopup');
     popup.style.display = 'none';
     popup.innerHTML = '';
   }
 
-  // Map popup: use same approach to anchor near the click
+  // ==========================================================
+  // Map popup (similar approach)
+  // ==========================================================
   function showMapPopup(source, adrEncoded, dataEncoded, event) {
     const popup = document.getElementById('detailPopup');
     popup.style.display = 'block';
     popup.style.position = 'absolute';
 
-    let x = 100, y = 100;
+    let x = 100;
+    let y = 100;
     if (event) {
       x = event.pageX + 10;
       y = event.pageY + 10;
@@ -289,12 +375,12 @@
     const lon = adr.lon;
     const dataParam = encodeURIComponent(JSON.stringify(data));
 
-    fetch(\`/api/getMapUrl?source=\${source}&lat=\${lat}&lon=\${lon}&data=\${dataParam}\`)
+    fetch(`/api/getMapUrl?source=${source}&lat=${lat}&lon=${lon}&data=${dataParam}`)
       .then(response => response.json())
       .then(result => {
         if (result.url) {
           // Replace content with the map image
-          popup.innerHTML = \`<p><button onclick="hideDetailPopup()">Close</button></p>\`;
+          popup.innerHTML = `<p><button onclick="hideDetailPopup()">Close</button></p>`;
           const img = document.createElement('img');
           img.src = result.url;
           img.style.maxWidth = '100%';
