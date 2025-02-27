@@ -1151,7 +1151,7 @@ async function buildDailyEmail(userId) {
       }
       let fbNote = '';
       if(an.isFallback) {
-        fbNote = `(Fallback from latest reading: ${formatDayTimeForUser(an.fallbackFromTimestamp)})`;
+        fbNote = `(Fallback from latest reading in UTC: ${formatDayTimeForUser(an.fallbackFromTimestamp)})`;
       }
       lines.push(`AirNow: Closest AQI=${c}, Radius Avg=${r}, c24=${c24}, r24=${r24} ${fbNote}`);
     } else {
